@@ -2,49 +2,49 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 
-namespace GatewayGuard
+namespace GatewayGuard;
+
+public class RedisIdempotencyStore : IIdempotencyStore
 {
-    public class RedisIdempotencyStore : IIdempotencyStore
+    private readonly IDatabase _db;
+    private readonly IdempotencyOptions _options;
+
+    public RedisIdempotencyStore(string connection, IdempotencyOptions options)
     {
-        private readonly IDatabase _db;
+        _options = options;
+        var config = ConfigurationOptions.Parse(options.RedisConnection);
+        config.AbortOnConnectFail = false;
+        var redis = ConnectionMultiplexer.Connect(config);
+        _db = redis.GetDatabase();
+    }
 
-        public RedisIdempotencyStore(string connection)
+    public async Task<IdempotencyRecord?> GetAsync(string key)
+    {
+        var data = await _db.StringGetAsync(key);
+
+        return data.HasValue ? JsonSerializer.Deserialize<IdempotencyRecord>(((byte[])data!).AsSpan()) : null;
+    }
+
+    public async Task SetAsync(string key, string requestHash, HttpResponse response)
+    {
+        // Capture response body
+        response.Body.Seek(0, SeekOrigin.Begin); // ensure position at start
+        using var ms = new MemoryStream();
+        await response.Body.CopyToAsync(ms);
+        var bodyBytes = ms.ToArray();
+
+        // Capture headers
+        var headers = response.Headers.ToDictionary(h => h.Key, h => h.Value.ToString());
+
+        var record = new IdempotencyRecord
         {
-            // Use abortConnect=false if Redis might not be ready immediately
-            var options = ConfigurationOptions.Parse(connection);
-            options.AbortOnConnectFail = false;
-            var redis = ConnectionMultiplexer.Connect(options);
-            _db = redis.GetDatabase();
-        }
+            RequestHash = requestHash,
+            StatusCode = response.StatusCode,
+            Headers = headers,
+            Body = bodyBytes
+        };
 
-        public async Task<IdempotencyRecord?> GetAsync(string key)
-        {
-            var data = await _db.StringGetAsync(key);
-            ReadOnlySpan<byte> span = ((byte[])data!).AsSpan();
-            return data.HasValue ? JsonSerializer.Deserialize<IdempotencyRecord>(span) : null;
-        }
-
-        public async Task SetAsync(string key, string requestHash, HttpResponse response)
-        {
-            // Capture response body
-            response.Body.Seek(0, SeekOrigin.Begin); // ensure position at start
-            using var ms = new MemoryStream();
-            await response.Body.CopyToAsync(ms);
-            var bodyBytes = ms.ToArray();
-
-            // Capture headers
-            var headers = response.Headers.ToDictionary(h => h.Key, h => h.Value.ToString());
-
-            var record = new IdempotencyRecord
-            {
-                RequestHash = requestHash,
-                StatusCode = response.StatusCode,
-                Headers = headers,
-                Body = bodyBytes
-            };
-
-            var json = JsonSerializer.Serialize(record);
-            await _db.StringSetAsync(key, json, TimeSpan.FromHours(24));
-        }
+        var json = JsonSerializer.Serialize(record);
+        await _db.StringSetAsync(key, json, _options.IdempotencyKeyExpiration);
     }
 }

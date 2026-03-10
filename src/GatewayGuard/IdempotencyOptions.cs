@@ -4,11 +4,12 @@ using System.Text;
 
 namespace GatewayGuard;
 
-public class IdempotencyOptions
+public sealed record IdempotencyOptions
 {
-    public string IdempotencyHeaderName { get; set; } = "Idempotency-Key";
-    public string RedisConnection { get; set; } = "localhost:6379";
-    public bool EnableFingerprinting { get; set; } = true;
-    public int MaxConcurrentRequests { get; set; } = 1000;
-    public double CircuitBreakerThreshold { get; set; } = 0.1;
+    public string IdempotencyHeaderName { get; init; } = "Idempotency-Key";
+    public TimeSpan IdempotencyKeyExpiration { get; init; } = TimeSpan.FromMinutes(5);
+    public string RedisConnection { get; init; } = "localhost:6379";
+    public bool EnableFingerprinting { get; init; } = true;
+    public int MaxConcurrentRequests { get; init; } = 1000;
+    public double CircuitBreakerThreshold { get; init; } = 0.1;
 }
