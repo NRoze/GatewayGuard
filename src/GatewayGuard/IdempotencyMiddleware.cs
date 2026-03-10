@@ -2,12 +2,21 @@
 
 namespace GatewayGuard;
 
-public class IdempotencyMiddleware
+/// <summary>
+/// ASP.NET Core middleware that enforces idempotency for incoming HTTP requests.
+/// </summary>
+public sealed class IdempotencyMiddleware
 {
     private readonly RequestDelegate _next;
     private readonly IIdempotencyStore _store;
     private readonly IdempotencyOptions _options;
 
+    /// <summary>
+    /// Constructs a new instance of <see cref="IdempotencyMiddleware"/>.
+    /// </summary>
+    /// <param name="next">The next middleware in the pipeline.</param>
+    /// <param name="store">The store used to persist and retrieve idempotency records.</param>
+    /// <param name="options">Options that control middleware behavior.</param>
     public IdempotencyMiddleware(
         RequestDelegate next,
         IIdempotencyStore store,
@@ -18,6 +27,14 @@ public class IdempotencyMiddleware
         _options = options;
     }
 
+    /// <summary>
+    /// Processes an incoming HTTP request and enforces idempotency rules:
+    /// - Extracts or generates the idempotency key/fingerprint
+    /// - Replays cached responses when available
+    /// - Captures and stores responses for future replay
+    /// </summary>
+    /// <param name="context">The current <see cref="HttpContext"/>.</param>
+    /// <returns>A task that completes when request processing is finished.</returns>
     public async Task InvokeAsync(HttpContext context)
     {
         var key = context.Request.Headers[_options.IdempotencyHeaderName].ToString();
@@ -47,6 +64,7 @@ public class IdempotencyMiddleware
         });
     }
 
+    // Private helpers omitted from XML documentation (internal implementation)
     private async Task<bool> TryHandleCachedKey(HttpContext context, string key, string fingerprint)
     {
         var cached = await _store.GetAsync(key).ConfigureAwait(false);

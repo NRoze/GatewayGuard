@@ -3,7 +3,7 @@ using System.Threading;
 
 namespace GatewayGuard;
 
-public class CircuitBreaker
+internal sealed class CircuitBreaker
 {
     private int _failures;
     private readonly int _threshold;

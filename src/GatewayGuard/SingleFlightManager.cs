@@ -3,7 +3,7 @@ using System.Threading.Tasks;
 
 namespace GatewayGuard
 {
-    public static class SingleFlightManager
+    internal static class SingleFlightManager
     {
         private static readonly ConcurrentDictionary<string, Task<object>> InFlight = new();
 

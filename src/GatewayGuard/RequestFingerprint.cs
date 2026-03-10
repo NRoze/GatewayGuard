@@ -4,7 +4,7 @@ using System.Text;
 
 namespace GatewayGuard;
 
-public static class RequestFingerprint
+internal static class RequestFingerprint
 {
     public static async Task<string> GenerateAsync(HttpContext context)
     {
