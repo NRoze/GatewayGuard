@@ -5,7 +5,7 @@ builder.Services.AddGatewayGuard(options =>
 {
     options.IdempotencyHeaderName = "X-Idempotency-Key";
     options.EnableFingerprinting = true;
-    options.IdempotencyKeyExpiration = TimeSpan.FromMinutes(10);
+    options.IdempotencyKeyExpiration = TimeSpan.FromMinutes(1);
     options.MaxConcurrentRequests = 500;
     options.RedisConnection = "localhost:6379";
     options.CircuitBreakerThreshold = 0.2;

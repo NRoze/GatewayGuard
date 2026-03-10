@@ -4,37 +4,43 @@ using Microsoft.AspNetCore.Http;
 
 namespace GatewayGuard;
 
-public class RedisIdempotencyStore : IIdempotencyStore
+public class RedisIdempotencyStore : IIdempotencyStore, IDisposable, IAsyncDisposable
 {
+    private readonly ConnectionMultiplexer _multiplexer;
     private readonly IDatabase _db;
     private readonly IdempotencyOptions _options;
 
-    public RedisIdempotencyStore(string connection, IdempotencyOptions options)
+    public RedisIdempotencyStore(IdempotencyOptions options)
     {
         _options = options;
         var config = ConfigurationOptions.Parse(options.RedisConnection);
         config.AbortOnConnectFail = false;
-        var redis = ConnectionMultiplexer.Connect(config);
-        _db = redis.GetDatabase();
+        _multiplexer = ConnectionMultiplexer.Connect(config);
+        _db = _multiplexer.GetDatabase();
     }
 
     public async Task<IdempotencyRecord?> GetAsync(string key)
     {
-        var data = await _db.StringGetAsync(key);
+        if (string.IsNullOrEmpty(key)) return null;
 
+        var data = await _db.StringGetAsync(key).ConfigureAwait(false);
         return data.HasValue ? JsonSerializer.Deserialize<IdempotencyRecord>(((byte[])data!).AsSpan()) : null;
     }
 
     public async Task SetAsync(string key, string requestHash, HttpResponse response)
     {
+        if (string.IsNullOrEmpty(key)) return;
+
         // Capture response body
-        response.Body.Seek(0, SeekOrigin.Begin); // ensure position at start
+        response.Body.Seek(0, SeekOrigin.Begin);
         using var ms = new MemoryStream();
-        await response.Body.CopyToAsync(ms);
+        await response.Body.CopyToAsync(ms).ConfigureAwait(false);
         var bodyBytes = ms.ToArray();
 
-        // Capture headers
-        var headers = response.Headers.ToDictionary(h => h.Key, h => h.Value.ToString());
+        // Preserve multi-value headers safely
+        var headers = response.Headers.ToDictionary(
+            h => h.Key,
+            h => string.Join(",", h.Value.ToArray()));
 
         var record = new IdempotencyRecord
         {
@@ -45,6 +51,19 @@ public class RedisIdempotencyStore : IIdempotencyStore
         };
 
         var json = JsonSerializer.Serialize(record);
-        await _db.StringSetAsync(key, json, _options.IdempotencyKeyExpiration);
+        await _db.StringSetAsync(key, json, _options.IdempotencyKeyExpiration).ConfigureAwait(false);
+    }
+
+    public void Dispose()
+    {
+        _multiplexer?.Dispose();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_multiplexer != null)
+        {
+            await _multiplexer.CloseAsync();
+        }
     }
 }

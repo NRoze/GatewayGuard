@@ -10,8 +10,8 @@ public static class ServiceCollectionExtensions
         var options = new IdempotencyOptions();
         configure(options);
 
-        services.AddSingleton<IIdempotencyStore, RedisIdempotencyStore>();
         services.AddSingleton(options);
+        services.AddSingleton<IIdempotencyStore, RedisIdempotencyStore>();
 
         return services;
     }

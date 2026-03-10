@@ -8,7 +8,10 @@ public class IdempotencyMiddleware
     private readonly IIdempotencyStore _store;
     private readonly IdempotencyOptions _options;
 
-    public IdempotencyMiddleware(RequestDelegate next, IIdempotencyStore store, IdempotencyOptions options)
+    public IdempotencyMiddleware(
+        RequestDelegate next, 
+        IIdempotencyStore store, 
+        IdempotencyOptions options)
     {
         _next = next;
         _store = store;
@@ -17,7 +20,6 @@ public class IdempotencyMiddleware
 
     public async Task InvokeAsync(HttpContext context)
     {
-        // 1. Determine key (header or fingerprint)
         var key = context.Request.Headers[_options.IdempotencyHeaderName].ToString();
         var fingerprint = await RequestFingerprint.GenerateAsync(context);
 
@@ -26,15 +28,55 @@ public class IdempotencyMiddleware
             key = fingerprint;
         }
 
-        // 2. Check cache in Redis
-        var cached = await _store.GetAsync(key);
-        if (cached != null && cached.RequestHash == fingerprint)
+        if (string.IsNullOrWhiteSpace(key))
         {
-            await ReplayCachedResponse(context, cached);
+            SetError(
+                context, 
+                StatusCodes.Status400BadRequest, 
+                $"Missing required idempotency key header.");
             return;
         }
 
-        // 3. Capture response for caching
+        if (await TryHandleCachedKey(context, key, fingerprint))
+        {
+            return;
+        }
+
+        await ExecuteAndCaptureResponse(context, key, fingerprint);
+    }
+
+    private async Task<bool> TryHandleCachedKey(HttpContext context, string key, string fingerprint)
+    {
+        var cached = await _store.GetAsync(key);
+
+        if (cached != null)
+        {
+            if (cached.RequestHash == fingerprint)
+            {
+                await ReplayCachedResponse(context, cached);
+                return true;
+            }
+            else
+            {
+                SetError(
+                    context, 
+                    StatusCodes.Status409Conflict, 
+                    "Idempotency key already used with a different payload.");
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static void SetError(HttpContext context, int statusCode, string message)
+    {
+        context.Response.StatusCode = statusCode;
+        context.Response.WriteAsync(message);
+    }
+
+    private async Task ExecuteAndCaptureResponse(HttpContext context, string key, string fingerprint)
+    {
         var originalBody = context.Response.Body;
         using var memStream = new MemoryStream();
         context.Response.Body = memStream;
