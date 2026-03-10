@@ -11,10 +11,10 @@ public static class RequestFingerprint
     public static async Task<string> GenerateAsync(HttpContext context)
     {
         using var memStream = new MemoryStream();
-        await context.Request.Body.CopyToAsync(memStream);
+        await context.Request.Body.CopyToAsync(memStream).ConfigureAwait(false);
         var bodyBytes = memStream.ToArray();
 
-        memStream.Seek(0, SeekOrigin.Begin);
+        memStream.SeekBegin();
 
         var raw = $"{context.Request.Method}:{context.Request.Path}{context.Request.QueryString}:{Convert.ToBase64String(bodyBytes)}";
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(raw)));

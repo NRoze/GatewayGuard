@@ -21,7 +21,7 @@ public class IdempotencyMiddleware
     public async Task InvokeAsync(HttpContext context)
     {
         var key = context.Request.Headers[_options.IdempotencyHeaderName].ToString();
-        var fingerprint = await RequestFingerprint.GenerateAsync(context);
+        var fingerprint = await RequestFingerprint.GenerateAsync(context).ConfigureAwait(false);
 
         if (_options.EnableFingerprinting && string.IsNullOrWhiteSpace(key))
         {
@@ -47,7 +47,7 @@ public class IdempotencyMiddleware
 
     private async Task<bool> TryHandleCachedKey(HttpContext context, string key, string fingerprint)
     {
-        var cached = await _store.GetAsync(key);
+        var cached = await _store.GetAsync(key).ConfigureAwait(false);
 
         if (cached != null)
         {
@@ -72,7 +72,7 @@ public class IdempotencyMiddleware
     private static void SetError(HttpContext context, int statusCode, string message)
     {
         context.Response.StatusCode = statusCode;
-        context.Response.WriteAsync(message);
+        context.Response.WriteAsync(message).ConfigureAwait(false);
     }
 
     private async Task ExecuteAndCaptureResponse(HttpContext context, string key, string fingerprint)
@@ -85,11 +85,11 @@ public class IdempotencyMiddleware
         {
             await _next(context); // Execute backend
 
-            memStream.Seek(0, SeekOrigin.Begin);
-            await _store.SetAsync(key, fingerprint, context.Response);
+            memStream.SeekBegin();
+            await _store.SetAsync(key, fingerprint, context.Response).ConfigureAwait(false);
 
-            memStream.Seek(0, SeekOrigin.Begin);
-            await memStream.CopyToAsync(originalBody); // write to original response
+            memStream.SeekBegin();
+            await memStream.CopyToAsync(originalBody).ConfigureAwait(false); // write to original response
         }
         finally
         {
@@ -106,6 +106,6 @@ public class IdempotencyMiddleware
             context.Response.Headers[h.Key] = h.Value;
         }
 
-        await context.Response.Body.WriteAsync(record.Body);
+        await context.Response.Body.WriteAsync(record.Body).ConfigureAwait(false);
     }
 }

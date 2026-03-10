@@ -63,7 +63,7 @@ public class RedisIdempotencyStore : IIdempotencyStore, IDisposable, IAsyncDispo
     {
         if (_multiplexer != null)
         {
-            await _multiplexer.CloseAsync();
+            await _multiplexer.CloseAsync().ConfigureAwait(false);
         }
     }
 }
