@@ -1,0 +1,16 @@
+<Solution>
+  <Folder Name="/docs/">
+    <File Path="docs/architecture.md" />
+    <File Path="docs/README.md" />
+    <File Path="docs/usage.md" />
+  </Folder>
+  <Folder Name="/samples/">
+    <Project Path="samples/SampleApi/SampleApi.csproj" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/GatewayGuard/GatewayGuard.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/GatewayGuard.Tests/GatewayGuard.Tests.csproj" />
+  </Folder>
+</Solution>
