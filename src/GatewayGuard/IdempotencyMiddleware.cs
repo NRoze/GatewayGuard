@@ -9,8 +9,8 @@ public class IdempotencyMiddleware
     private readonly IdempotencyOptions _options;
 
     public IdempotencyMiddleware(
-        RequestDelegate next, 
-        IIdempotencyStore store, 
+        RequestDelegate next,
+        IIdempotencyStore store,
         IdempotencyOptions options)
     {
         _next = next;
@@ -23,26 +23,28 @@ public class IdempotencyMiddleware
         var key = context.Request.Headers[_options.IdempotencyHeaderName].ToString();
         var fingerprint = await RequestFingerprint.GenerateAsync(context).ConfigureAwait(false);
 
-        if (_options.EnableFingerprinting && string.IsNullOrWhiteSpace(key))
-        {
-            key = fingerprint;
-        }
+        key = string.IsNullOrWhiteSpace(key) && _options.EnableFingerprinting
+            ? fingerprint
+            : key;
 
         if (string.IsNullOrWhiteSpace(key))
         {
-            SetError(
-                context, 
-                StatusCodes.Status400BadRequest, 
+            await SetErrorResponse(
+                context,
+                StatusCodes.Status400BadRequest,
                 $"Missing required idempotency key header.");
             return;
         }
 
-        if (await TryHandleCachedKey(context, key, fingerprint))
+        await SingleFlightManager.ExecuteAsync(key, async () =>
         {
-            return;
-        }
+            if (!await TryHandleCachedKey(context, key, fingerprint))
+            {
+                await ExecuteAndCaptureResponse(context, key, fingerprint);
+            }
 
-        await ExecuteAndCaptureResponse(context, key, fingerprint);
+            return context.Response;
+        });
     }
 
     private async Task<bool> TryHandleCachedKey(HttpContext context, string key, string fingerprint)
@@ -58,9 +60,9 @@ public class IdempotencyMiddleware
             }
             else
             {
-                SetError(
-                    context, 
-                    StatusCodes.Status409Conflict, 
+                await SetErrorResponse(
+                    context,
+                    StatusCodes.Status409Conflict,
                     "Idempotency key already used with a different payload.");
                 return true;
             }
@@ -69,10 +71,10 @@ public class IdempotencyMiddleware
         return false;
     }
 
-    private static void SetError(HttpContext context, int statusCode, string message)
+    private static async Task SetErrorResponse(HttpContext context, int statusCode, string message)
     {
         context.Response.StatusCode = statusCode;
-        context.Response.WriteAsync(message).ConfigureAwait(false);
+        await context.Response.WriteAsync(message).ConfigureAwait(false);
     }
 
     private async Task ExecuteAndCaptureResponse(HttpContext context, string key, string fingerprint)
@@ -83,13 +85,13 @@ public class IdempotencyMiddleware
 
         try
         {
-            await _next(context); // Execute backend
+            await _next(context).ConfigureAwait(false);
 
             memStream.SeekBegin();
             await _store.SetAsync(key, fingerprint, context.Response).ConfigureAwait(false);
 
             memStream.SeekBegin();
-            await memStream.CopyToAsync(originalBody).ConfigureAwait(false); // write to original response
+            await memStream.CopyToAsync(originalBody).ConfigureAwait(false);
         }
         finally
         {

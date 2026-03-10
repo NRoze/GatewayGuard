@@ -31,13 +31,7 @@ public class RedisIdempotencyStore : IIdempotencyStore, IDisposable, IAsyncDispo
     {
         if (string.IsNullOrEmpty(key)) return;
 
-        // Capture response body
-        response.Body.Seek(0, SeekOrigin.Begin);
-        using var ms = new MemoryStream();
-        await response.Body.CopyToAsync(ms).ConfigureAwait(false);
-        var bodyBytes = ms.ToArray();
-
-        // Preserve multi-value headers safely
+        var bodyBytes = await response.Body.CopyAsync().ConfigureAwait(false);
         var headers = response.Headers.ToDictionary(
             h => h.Key,
             h => string.Join(",", h.Value.ToArray()));

@@ -1,4 +1,5 @@
 using GatewayGuard;
+using SampleApi;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddGatewayGuard(options =>
@@ -16,7 +17,9 @@ app.UseGatewayGuard();
 
 app.MapPost("/orders", async (HttpContext ctx) =>
 {
-    await Task.Delay(500); // simulate processing
+    Interlocked.Increment(ref TestState.ExecutionCount);
+
+    await Task.Delay(200); 
     await ctx.Response.WriteAsync("Order processed!");
 });
 

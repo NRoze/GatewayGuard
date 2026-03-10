@@ -1,8 +1,6 @@
 ﻿using Microsoft.AspNetCore.Http;
 using System.Security.Cryptography;
 using System.Text;
-using System.IO;
-using System.Threading.Tasks;
 
 namespace GatewayGuard;
 
@@ -10,13 +8,11 @@ public static class RequestFingerprint
 {
     public static async Task<string> GenerateAsync(HttpContext context)
     {
-        using var memStream = new MemoryStream();
-        await context.Request.Body.CopyToAsync(memStream).ConfigureAwait(false);
-        var bodyBytes = memStream.ToArray();
+        var request = context.Request;
+        byte[] bodyBytes = await request.Body.CopyAsync();
+        var raw = $"{request.Method}:{request.Path}{request.QueryString}:{Convert.ToBase64String(bodyBytes)}"; 
 
-        memStream.SeekBegin();
-
-        var raw = $"{context.Request.Method}:{context.Request.Path}{context.Request.QueryString}:{Convert.ToBase64String(bodyBytes)}";
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(raw)));
+
     }
 }
