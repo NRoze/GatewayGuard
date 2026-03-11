@@ -20,6 +20,7 @@ public static class ServiceCollectionExtensions
         configure(options);
 
         services.AddSingleton(options);
+        services.AddSingleton<SingleFlight>();
         services.AddSingleton<IIdempotencyStore, RedisIdempotencyStore>();
 
         return services;

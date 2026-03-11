@@ -20,6 +20,11 @@ public sealed class IdempotencyOptions
     public TimeSpan IdempotencyKeyExpiration { get; set; } = TimeSpan.FromMinutes(5);
 
     /// <summary>
+    /// How long retry requests cached duration should be retained.
+    /// </summary>
+    public TimeSpan SingleFlightExpiration { get; set; } = TimeSpan.FromSeconds(5);
+
+    /// <summary>
     /// Redis connection string used by the <see cref="RedisIdempotencyStore"/>.
     /// </summary>
     public string RedisConnection { get; set; } = "localhost:6379";

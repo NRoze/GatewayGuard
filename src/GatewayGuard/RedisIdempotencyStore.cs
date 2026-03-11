@@ -50,19 +50,7 @@ public sealed class RedisIdempotencyStore : IIdempotencyStore, IDisposable, IAsy
     {
         if (string.IsNullOrEmpty(key)) return;
 
-        var bodyBytes = await response.Body.CopyAsync().ConfigureAwait(false);
-        var headers = response.Headers.ToDictionary(
-            h => h.Key,
-            h => string.Join(",", h.Value.ToArray()));
-
-        var record = new IdempotencyRecord
-        {
-            RequestHash = requestHash,
-            StatusCode = response.StatusCode,
-            Headers = headers,
-            Body = bodyBytes
-        };
-
+        var record = await IdempotencyRecord.CreateAsync(requestHash, response);
         var json = JsonSerializer.Serialize(record);
         await _db.StringSetAsync(key, json, _options.IdempotencyKeyExpiration).ConfigureAwait(false);
     }
@@ -85,5 +73,44 @@ public sealed class RedisIdempotencyStore : IIdempotencyStore, IDisposable, IAsy
         {
             await _multiplexer.CloseAsync().ConfigureAwait(false);
         }
+    }
+
+    /// <summary>
+    /// Publishes a completion notification for the specified idempotency key using Redis pub/sub.
+    /// This can be used to notify waiters that a response for the key is available.
+    /// </summary>
+    /// <param name="key">The idempotency key for which completion is being published.</param>
+    /// <returns>A task that completes when the publish operation has finished.</returns>
+    public async Task PublishCompletedAsync(string key)
+    {
+        var sub = _multiplexer.GetSubscriber();
+        var channel = RedisChannel.Literal($"idem:{key}:done");
+
+        await sub.PublishAsync(channel, "1").ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Waits for a completion notification for the given idempotency key or until the specified timeout elapses.
+    /// </summary>
+    /// <param name="key">The idempotency key to wait for.</param>
+    /// <param name="timeout">Maximum time to wait for the completion notification.</param>
+    /// <returns>
+    /// A task that completes when the notification is received or the timeout expires.
+    /// </returns>
+    public async Task WaitForCompletionAsync(string key, TimeSpan timeout)
+    {
+        var sub = _multiplexer.GetSubscriber();
+        var tcs = new TaskCompletionSource();
+
+        var channel = RedisChannel.Literal($"idem:{key}:done");
+
+        await sub.SubscribeAsync(channel, (_, _) =>
+        {
+            tcs.TrySetResult();
+        });
+
+        await Task.WhenAny(tcs.Task, Task.Delay(timeout));
+
+        await sub.UnsubscribeAsync(channel);
     }
 }

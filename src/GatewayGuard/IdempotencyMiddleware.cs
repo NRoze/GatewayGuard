@@ -9,6 +9,7 @@ public sealed class IdempotencyMiddleware
 {
     private readonly RequestDelegate _next;
     private readonly IIdempotencyStore _store;
+    private readonly SingleFlight _singleFlight;
     private readonly IdempotencyOptions _options;
 
     /// <summary>
@@ -20,11 +21,13 @@ public sealed class IdempotencyMiddleware
     public IdempotencyMiddleware(
         RequestDelegate next,
         IIdempotencyStore store,
-        IdempotencyOptions options)
+        IdempotencyOptions options,
+        SingleFlight singleFlight)
     {
         _next = next;
         _store = store;
         _options = options;
+        _singleFlight = singleFlight;
     }
 
     /// <summary>
@@ -37,6 +40,7 @@ public sealed class IdempotencyMiddleware
     /// <returns>A task that completes when request processing is finished.</returns>
     public async Task InvokeAsync(HttpContext context)
     {
+        context.Request.EnableBuffering();
         var key = context.Request.Headers[_options.IdempotencyHeaderName].ToString();
         var fingerprint = await RequestFingerprint.GenerateAsync(context).ConfigureAwait(false);
 
@@ -53,7 +57,7 @@ public sealed class IdempotencyMiddleware
             return;
         }
 
-        await SingleFlightManager.ExecuteAsync(key, async () =>
+        await _singleFlight.ExecuteAsync<HttpResponse>(key, async (ct) =>
         {
             if (!await TryHandleCachedKey(context, key, fingerprint))
             {
@@ -64,7 +68,6 @@ public sealed class IdempotencyMiddleware
         });
     }
 
-    // Private helpers omitted from XML documentation (internal implementation)
     private async Task<bool> TryHandleCachedKey(HttpContext context, string key, string fingerprint)
     {
         var cached = await _store.GetAsync(key).ConfigureAwait(false);
@@ -105,8 +108,11 @@ public sealed class IdempotencyMiddleware
         {
             await _next(context).ConfigureAwait(false);
 
-            memStream.SeekBegin();
-            await _store.SetAsync(key, fingerprint, context.Response).ConfigureAwait(false);
+            if (context.Response.StatusCode < 500)
+            {
+                memStream.SeekBegin();
+                await _store.SetAsync(key, fingerprint, context.Response).ConfigureAwait(false);
+            }
 
             memStream.SeekBegin();
             await memStream.CopyToAsync(originalBody).ConfigureAwait(false);

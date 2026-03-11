@@ -24,7 +24,7 @@ namespace GatewayGuard
         /// </summary>
         /// <param name="source">The source stream to read.</param>
         /// <returns>A byte array containing the stream contents.</returns>
-        static public async Task<byte[]> ToByteArray(this Stream source)
+        static public async Task<byte[]> ToByteArrayAsync(this Stream source)
         {
             using (var temp = new MemoryStream())
             {
@@ -40,21 +40,23 @@ namespace GatewayGuard
         /// <returns>A byte array containing the stream content.</returns>
         static public async Task<byte[]> CopyAsync(this Stream source)
         {
-            byte[] result = Array.Empty<byte>();
+            byte[] result = [];
+
 
             if (source == null)
             {
                 return result;
             }
-            else if (source.CanSeek)
+
+            if (source.CanSeek)
             {
                 source.Position = 0;
-                result = await source.ToByteArray().ConfigureAwait(false);
+                result = await source.ToByteArrayAsync();
                 source.Position = 0;
             }
             else
             {
-                result = await source.ToByteArray().ConfigureAwait(false);
+                result = await source.ToByteArrayAsync();
                 source = new MemoryStream(result);
             }
 
