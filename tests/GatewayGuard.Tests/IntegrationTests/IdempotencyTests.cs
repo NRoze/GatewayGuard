@@ -154,7 +154,7 @@ public class IdempotencyTests : IClassFixture<TestApiFactory>
     }
 
     [Fact]
-    public async Task Same_Key_Different_Method_Should_Not_Collide_Be_Blocked()
+    public async Task Same_Key_Different_Method_Should_Not_Collide()
     {
         var post = new HttpRequestMessage(HttpMethod.Post, "/orders");
         post.Headers.Add("X-Idempotency-Key", randomKey);
@@ -165,9 +165,9 @@ public class IdempotencyTests : IClassFixture<TestApiFactory>
         var r1 = await _client.SendAsync(post);
         var r2 = await _client.SendAsync(put);
 
-        TestState.ExecutionCount.Should().Be(1);
+        TestState.ExecutionCount.Should().Be(2);
         r1.StatusCode.Should().Be(HttpStatusCode.OK);   
-        r2.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        r2.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [Fact]
