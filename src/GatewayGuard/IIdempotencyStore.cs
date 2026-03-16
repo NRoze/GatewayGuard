@@ -1,5 +1,6 @@
 ﻿using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
+using StackExchange.Redis;
 
 namespace GatewayGuard;
 
@@ -16,7 +17,7 @@ public interface IIdempotencyStore
     /// <returns>
     /// The matching <see cref="IdempotencyRecord"/> if found; otherwise <c>null</c>.
     /// </returns>
-    Task<IdempotencyRecord?> GetAsync(string key);
+    //Task<IdempotencyRecord?> GetAsync(string key);
 
     /// <summary>
     /// Stores the response for a completed request together with the request hash under the provided key.
@@ -25,7 +26,10 @@ public interface IIdempotencyStore
     /// <param name="requestHash">A fingerprint or hash representing the request payload.</param>
     /// <param name="response">The <see cref="HttpResponse"/> to capture and persist.</param>
     /// <returns>A task that completes when the record has been stored.</returns>
-    Task SetAsync(string key, string requestHash, HttpResponse response);
-    Task<bool> TryAcquireLockAsync(string key, TimeSpan ttl);
-    Task ReleaseLockAsync(string key);
+    //Task SetAsync(string key, string requestHash, HttpResponse response);
+    Task SaveResponse(string key, string requestHash, HttpResponse response);
+    Task<IdempotencyRecord?> GetResponse(string key);
+    Task WaitForCompletionAsync(string key, TimeSpan timeout);
+    Task<string?> TryAcquireLockAsync(string key, TimeSpan ttl);
+    Task<RedisResult> ReleaseLockAsync(string key, string lockValue);
 }

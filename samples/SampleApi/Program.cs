@@ -2,6 +2,8 @@ using GatewayGuard;
 using SampleApi;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddLogging();
 builder.Services.AddGatewayGuard(options =>
 {
     options.IdempotencyHeaderName = "X-Idempotency-Key";
@@ -57,5 +59,4 @@ app.MapPost("/flaky", async (HttpContext ctx) =>
 
     await ctx.Response.WriteAsync("Success");
 });
-
 app.Run();

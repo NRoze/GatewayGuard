@@ -87,7 +87,7 @@ public class IdempotencyTests : IClassFixture<TestApiFactory>
         var responses = await Task.WhenAll(tasks);
 
         responses.Should().OnlyContain(r => r.StatusCode == HttpStatusCode.OK);
-
+        
         TestState.ExecutionCount.Should().Be(1);
     }
 
@@ -215,7 +215,7 @@ public class IdempotencyTests : IClassFixture<TestApiFactory>
         var content = JsonContent.Create(new { data = payload });
 
         var r1 = await _client.PostAsync("/orders", content);
-        var r2 = await _client.PostAsync("/orders", JsonContent.Create(new { data = payload }));
+        var r2 = await _client.PostAsync("/orders", content);
 
         TestState.ExecutionCount.Should().Be(1);
     }
@@ -223,22 +223,7 @@ public class IdempotencyTests : IClassFixture<TestApiFactory>
     [Fact]
     public async Task Retry_Storm_Should_Only_Execute_Once()
     {
-        const int bursts = 10;
-        const int requestsPerBurst = 20;
-
-        var tasks = new List<Task<HttpResponseMessage>>();
-
-        for (int b = 0; b < bursts; b++)
-        {
-            for (int i = 0; i < requestsPerBurst; i++)
-            {
-                tasks.Add(SendRequest());
-            }
-
-            // simulate network jitter between retries
-            await Task.Delay(Random.Shared.Next(5, 25));
-        }
-
+        var tasks = Enumerable.Range(0, 1000).Select(_ => SendRequest()).ToList();
         var responses = await Task.WhenAll(tasks);
 
         responses.Should().OnlyContain(r => r.StatusCode == HttpStatusCode.OK);

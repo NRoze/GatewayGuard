@@ -1,4 +1,7 @@
-﻿using Microsoft.AspNetCore.Http;
+﻿using Microsoft.AspNetCore.DataProtection.KeyManagement;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
+using System.Diagnostics;
 
 namespace GatewayGuard;
 
@@ -11,6 +14,7 @@ public sealed class IdempotencyMiddleware
     private readonly IIdempotencyStore _store;
     private readonly SingleFlight _singleFlight;
     private readonly IdempotencyOptions _options;
+    private readonly ILogger<IdempotencyMiddleware> _logger;
 
     /// <summary>
     /// Constructs a new instance of <see cref="IdempotencyMiddleware"/>.
@@ -22,12 +26,14 @@ public sealed class IdempotencyMiddleware
         RequestDelegate next,
         IIdempotencyStore store,
         IdempotencyOptions options,
-        SingleFlight singleFlight)
+        SingleFlight singleFlight,
+        ILogger<IdempotencyMiddleware> logger)
     {
         _next = next;
         _store = store;
         _options = options;
         _singleFlight = singleFlight;
+        _logger = logger;
     }
     /// <summary>
     /// Processes an incoming HTTP request and enforces idempotency rules:
@@ -39,6 +45,7 @@ public sealed class IdempotencyMiddleware
     /// <returns>A task that completes when request processing is finished.</returns>
     public async Task InvokeAsync(HttpContext context)
     {
+        //_logger.LogInformation("Processing request {Method} {Path} ({TraceId})", context.Request.Method, context.Request.Path, Activity.Current?.TraceId);
         if (!IsIdempotentMethod(context))
         {
             await _next(context);
@@ -53,17 +60,55 @@ public sealed class IdempotencyMiddleware
         if (string.IsNullOrWhiteSpace(input.key))
         {
             await context.SetResponseErrorMissingIdemKey();
+
+            return;
         }
 
         await _singleFlight.ExecuteAsync(input.key, async (ct) =>
         {
+            await ExecuteRequestAsync(context, input).ConfigureAwait(false);
+
+            return context.Response;
+        });
+    }
+
+    private async Task ExecuteRequestAsync(HttpContext context, (string key, string fingerprint) input)
+    {
+        _logger.LogInformation("Acquiring lock for key {Key} ({TraceId})", input.key, Activity.Current?.TraceId);
+        var lockValue = await _store.TryAcquireLockAsync(
+                input.key,
+                _options.IdempotencyKeyExpiration)
+            .ConfigureAwait(false);
+
+        if (lockValue is null)
+        {
+            _logger.LogInformation("Lock already held for key {Key}, waiting for completion ({TraceId})", input.key, Activity.Current?.TraceId);
+            await _store.WaitForCompletionAsync(input.key, TimeSpan.FromSeconds(10));//TBD configurable
+            if (!await TryHandleCachedKey(context, input.key, input.fingerprint))
+            { 
+                await context.SetResponseErrorConflictIdemKey();
+            }
+            var bodyString = context.Request.Body.CanSeek ? new StreamReader(context.Request.Body).ReadToEnd() : "<non-seekable-body>";
+            _logger.LogInformation("Finished waiting for key {Key}:{Body} ({TraceId})", input.key, bodyString, Activity.Current?.TraceId);
+            return;
+        }
+
+        try
+        {
+            _logger.LogInformation("Lock acquired for key {Key}, executing request ({TraceId})", input.key, Activity.Current?.TraceId);
             if (!await TryHandleCachedKey(context, input.key, input.fingerprint))
             {
                 await ExecuteAndCaptureResponse(context, input.key, input.fingerprint);
             }
-
-            return context.Response;
-        });
+        }
+        finally
+        {
+            if (lockValue is not null)
+            {
+                _logger.LogInformation("Releasing lock for key {Key} ({TraceId})", input.key, Activity.Current?.TraceId);
+                await _store.ReleaseLockAsync(input.key, lockValue).ConfigureAwait(false);
+            }
+        }
     }
 
     private async Task<(string, string)> TryExtractKeyAndFingerprintAsync(HttpContext context)
@@ -80,10 +125,12 @@ public sealed class IdempotencyMiddleware
 
     private async Task<bool> TryHandleCachedKey(HttpContext context, string key, string fingerprint)
     {
-        var cached = await _store.GetAsync(key).ConfigureAwait(false);
+        var cached = await _store.GetResponse(key).ConfigureAwait(false);
 
+        //_logger.LogInformation("Checking for cached response for key {Key} ({TraceId})", key, Activity.Current?.TraceId);
         if (cached != null)
         {
+            //_logger.LogInformation("Cached response found for key {Key} (TraceId: {TraceId})", key, Activity.Current?.TraceId);
             if (cached.RequestHash == fingerprint)
             {
                 await ReplayCachedResponse(context, cached);
@@ -112,7 +159,7 @@ public sealed class IdempotencyMiddleware
             if (context.Response.StatusCode < 500)
             {
                 memStream.SeekBegin();
-                await _store.SetAsync(key, fingerprint, context.Response).ConfigureAwait(false);
+                await _store.SaveResponse(key, fingerprint, context.Response).ConfigureAwait(false);
             }
 
             memStream.SeekBegin();
@@ -124,6 +171,8 @@ public sealed class IdempotencyMiddleware
         }
     }
 
+    private bool IsIdempotentMethod(HttpContext context) =>
+        _options.EnabledForMethods.Contains(new HttpMethod(context.Request.Method));
     private static async Task ReplayCachedResponse(HttpContext context, IdempotencyRecord record)
     {
         context.Response.StatusCode = record.StatusCode;
@@ -135,7 +184,4 @@ public sealed class IdempotencyMiddleware
 
         await context.Response.Body.WriteAsync(record.Body).ConfigureAwait(false);
     }
-    private bool IsIdempotentMethod(HttpContext context) =>
-        _options.EnabledForMethods.Contains(new HttpMethod(context.Request.Method));
-
 }

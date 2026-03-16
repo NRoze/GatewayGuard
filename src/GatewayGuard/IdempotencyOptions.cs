@@ -54,4 +54,6 @@ public sealed class IdempotencyOptions
         {
             HttpMethod.Post
         };
+
+    public int RedisConnectionTimeoutMs { get; set; } = 500;
 }

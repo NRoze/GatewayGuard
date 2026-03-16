@@ -85,9 +85,18 @@ namespace GatewayGuard
                 ErrorMessageConflictIdempotencyKey).ConfigureAwait(false);
         }
 
+        static public async Task SetResponseErrorUnknown(this HttpContext context)
+        {
+            context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+            await context.Response.WriteAsync(
+                ErrorMessageUnknown).ConfigureAwait(false);
+        }
+        
         private const string ErrorMessageMissingIdempotencyKey =
             "Missing required idempotency key header.";
         private const string ErrorMessageConflictIdempotencyKey =
             "Idempotency key already used with a different payload.";
+        private const string ErrorMessageUnknown =
+            "An unknown error occurred while processing the request.";
     }
 }

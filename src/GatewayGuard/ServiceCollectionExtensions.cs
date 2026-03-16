@@ -1,5 +1,6 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
 using Microsoft.AspNetCore.Builder;
+using StackExchange.Redis;
 
 namespace GatewayGuard;
 
@@ -21,6 +22,14 @@ public static class ServiceCollectionExtensions
 
         services.AddSingleton(options);
         services.AddSingleton<SingleFlight>();
+        services.AddSingleton<IConnectionMultiplexer>(sp =>
+        {
+            var config = ConfigurationOptions.Parse(options.RedisConnection);
+
+            config.ConnectTimeout = options.RedisConnectionTimeoutMs;
+
+            return ConnectionMultiplexer.Connect(options.RedisConnection);
+        });
         services.AddSingleton<IIdempotencyStore, RedisIdempotencyStore>();
 
         return services;
