@@ -27,8 +27,6 @@ namespace GatewayGuard
         /// </summary>
         public byte[] Body { get; set; } = Array.Empty<byte>();
 
-        private IdempotencyRecord() { }
-
         /// <summary>
         /// Creates an <see cref="IdempotencyRecord"/> by capturing the provided <see cref="HttpResponse"/>.
         /// </summary>

@@ -1,8 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
-
-namespace GatewayGuard;
+﻿namespace GatewayGuard;
 
 /// <summary>
 /// Options controlling idempotency middleware behavior and storage configuration.
@@ -43,4 +39,19 @@ public sealed class IdempotencyOptions
     /// Threshold used by any circuit breaker logic (fraction of failures that triggers the breaker).
     /// </summary>
     public double CircuitBreakerThreshold { get; set; } = 0.1;
+
+    /// <summary>
+    /// The set of HTTP methods for which idempotency behavior is applied by the middleware.
+    /// </summary>
+    /// <remarks>
+    /// By default this contains only <see cref="HttpMethod.Post"/>. Modify this set to enable
+    /// idempotency for additional methods (for example, <c>HttpMethod.Put</c> or <c>HttpMethod.Patch</c>).
+    /// The middleware checks this collection to decide whether to attempt to read an idempotency key,
+    /// to generate a request fingerprint when enabled, or to coordinate single-flight request handling.
+    /// </remarks>
+    public ISet<HttpMethod> EnabledForMethods { get; set; } =
+        new HashSet<HttpMethod>
+        {
+            HttpMethod.Post
+        };
 }

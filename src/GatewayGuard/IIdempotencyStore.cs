@@ -26,4 +26,6 @@ public interface IIdempotencyStore
     /// <param name="response">The <see cref="HttpResponse"/> to capture and persist.</param>
     /// <returns>A task that completes when the record has been stored.</returns>
     Task SetAsync(string key, string requestHash, HttpResponse response);
+    Task<bool> TryAcquireLockAsync(string key, TimeSpan ttl);
+    Task ReleaseLockAsync(string key);
 }

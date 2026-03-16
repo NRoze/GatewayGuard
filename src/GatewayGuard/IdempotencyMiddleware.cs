@@ -29,7 +29,6 @@ public sealed class IdempotencyMiddleware
         _options = options;
         _singleFlight = singleFlight;
     }
-
     /// <summary>
     /// Processes an incoming HTTP request and enforces idempotency rules:
     /// - Extracts or generates the idempotency key/fingerprint
@@ -40,7 +39,35 @@ public sealed class IdempotencyMiddleware
     /// <returns>A task that completes when request processing is finished.</returns>
     public async Task InvokeAsync(HttpContext context)
     {
+        if (!IsIdempotentMethod(context))
+        {
+            await _next(context);
+            return;
+        }
+
         context.Request.EnableBuffering();
+
+        (string key, string fingerprint) input = 
+            await TryExtractKeyAndFingerprintAsync(context).ConfigureAwait(false);
+
+        if (string.IsNullOrWhiteSpace(input.key))
+        {
+            await context.SetResponseErrorMissingIdemKey();
+        }
+
+        await _singleFlight.ExecuteAsync(input.key, async (ct) =>
+        {
+            if (!await TryHandleCachedKey(context, input.key, input.fingerprint))
+            {
+                await ExecuteAndCaptureResponse(context, input.key, input.fingerprint);
+            }
+
+            return context.Response;
+        });
+    }
+
+    private async Task<(string, string)> TryExtractKeyAndFingerprintAsync(HttpContext context)
+    {
         var key = context.Request.Headers[_options.IdempotencyHeaderName].ToString();
         var fingerprint = await RequestFingerprint.GenerateAsync(context).ConfigureAwait(false);
 
@@ -48,24 +75,7 @@ public sealed class IdempotencyMiddleware
             ? fingerprint
             : key;
 
-        if (string.IsNullOrWhiteSpace(key))
-        {
-            await SetErrorResponse(
-                context,
-                StatusCodes.Status400BadRequest,
-                $"Missing required idempotency key header.");
-            return;
-        }
-
-        await _singleFlight.ExecuteAsync<HttpResponse>(key, async (ct) =>
-        {
-            if (!await TryHandleCachedKey(context, key, fingerprint))
-            {
-                await ExecuteAndCaptureResponse(context, key, fingerprint);
-            }
-
-            return context.Response;
-        });
+        return (key, fingerprint);
     }
 
     private async Task<bool> TryHandleCachedKey(HttpContext context, string key, string fingerprint)
@@ -81,21 +91,12 @@ public sealed class IdempotencyMiddleware
             }
             else
             {
-                await SetErrorResponse(
-                    context,
-                    StatusCodes.Status409Conflict,
-                    "Idempotency key already used with a different payload.");
+                await context.SetResponseErrorConflictIdemKey();
                 return true;
             }
         }
 
         return false;
-    }
-
-    private static async Task SetErrorResponse(HttpContext context, int statusCode, string message)
-    {
-        context.Response.StatusCode = statusCode;
-        await context.Response.WriteAsync(message).ConfigureAwait(false);
     }
 
     private async Task ExecuteAndCaptureResponse(HttpContext context, string key, string fingerprint)
@@ -134,4 +135,7 @@ public sealed class IdempotencyMiddleware
 
         await context.Response.Body.WriteAsync(record.Body).ConfigureAwait(false);
     }
+    private bool IsIdempotentMethod(HttpContext context) =>
+        _options.EnabledForMethods.Contains(new HttpMethod(context.Request.Method));
+
 }

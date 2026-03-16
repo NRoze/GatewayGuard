@@ -1,5 +1,4 @@
 ﻿using System.Collections.Concurrent;
-using System.Threading.Tasks;
 
 namespace GatewayGuard
 {
@@ -17,7 +16,7 @@ namespace GatewayGuard
             _maxEntries = options.MaxConcurrentRequests;
         }
 
-        public Task<T> ExecuteAsync<T>(
+        public async Task<T> ExecuteAsync<T>(
             string key,
             Func<CancellationToken, Task<T>> action,
             CancellationToken callerToken = default)
@@ -28,14 +27,14 @@ namespace GatewayGuard
 
             if (_inFlight.TryAdd(key, flight))
             {
-                _ = RunAsync(key, flight, action);
+                await RunAsync(key, flight, action);
             }
             else
             {
                 flight = _inFlight[key];
             }
 
-            return flight.WaitAsync<T>(callerToken);
+            return await flight.WaitAsync<T>(callerToken);
         }
 
         private async Task RunAsync<T>(string key, Flight flight, Func<CancellationToken, Task<T>> action)
@@ -45,6 +44,7 @@ namespace GatewayGuard
             try
             {
                 var result = await action(cts.Token).ConfigureAwait(false);
+
                 flight.SetResult(result);
             }
             catch (Exception ex)
@@ -78,13 +78,13 @@ namespace GatewayGuard
 
             private readonly long _created = Environment.TickCount64;
 
-            public bool IsExpired => Environment.TickCount64 - _created > 30000;
+            public bool IsExpired => Environment.TickCount64 - _created > 30000;// TBD and make this configurable 
 
             public async Task<T> WaitAsync<T>(CancellationToken ct)
             {
                 using var reg = ct.Register(() => _tcs.TrySetCanceled(ct));
-
                 var result = await _tcs.Task.ConfigureAwait(false);
+
                 return (T)result!;
             }
 

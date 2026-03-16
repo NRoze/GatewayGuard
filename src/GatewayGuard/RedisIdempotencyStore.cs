@@ -22,7 +22,8 @@ public sealed class RedisIdempotencyStore : IIdempotencyStore, IDisposable, IAsy
     {
         _options = options;
         var config = ConfigurationOptions.Parse(options.RedisConnection);
-        config.AbortOnConnectFail = false;
+        //config.AbortOnConnectFail = false;
+        config.ConnectTimeout = 100;//TBD: make this configurable
         _multiplexer = ConnectionMultiplexer.Connect(config);
         _db = _multiplexer.GetDatabase();
     }
@@ -112,5 +113,19 @@ public sealed class RedisIdempotencyStore : IIdempotencyStore, IDisposable, IAsy
         await Task.WhenAny(tcs.Task, Task.Delay(timeout));
 
         await sub.UnsubscribeAsync(channel);
+    }
+    public async Task<bool> TryAcquireLockAsync(string key, TimeSpan ttl)
+    {
+        return await _db.StringSetAsync(
+            $"{key}:lock",
+            "1",
+            ttl,
+            When.NotExists
+        ).ConfigureAwait(false);
+    }
+
+    public async Task ReleaseLockAsync(string key)
+    {
+        await _db.KeyDeleteAsync($"{key}:lock").ConfigureAwait(false);
     }
 }

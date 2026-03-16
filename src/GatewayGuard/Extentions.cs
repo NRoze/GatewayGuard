@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Microsoft.AspNetCore.Http;
+using System;
 using System.Collections.Generic;
 using System.Text;
 
@@ -62,5 +63,31 @@ namespace GatewayGuard
 
             return result;
         }
+
+        static public async Task SetResponseError(
+            this HttpContext context, int statusCode, string message)
+        {
+            context.Response.StatusCode = statusCode;
+            await context.Response.WriteAsync(message).ConfigureAwait(false);
+        }
+
+        static public async Task SetResponseErrorMissingIdemKey(this HttpContext context)
+        {
+            context.Response.StatusCode = StatusCodes.Status400BadRequest;
+            await context.Response.WriteAsync(
+                ErrorMessageMissingIdempotencyKey).ConfigureAwait(false);
+        }
+
+        static public async Task SetResponseErrorConflictIdemKey(this HttpContext context)
+        {
+            context.Response.StatusCode = StatusCodes.Status409Conflict;
+            await context.Response.WriteAsync(
+                ErrorMessageConflictIdempotencyKey).ConfigureAwait(false);
+        }
+
+        private const string ErrorMessageMissingIdempotencyKey =
+            "Missing required idempotency key header.";
+        private const string ErrorMessageConflictIdempotencyKey =
+            "Idempotency key already used with a different payload.";
     }
 }
