@@ -23,7 +23,7 @@ namespace GatewayGuard
         {
             CleanupIfNeeded();
 
-            var flight = new Flight();
+            var flight = new Flight(_ttl);
 
             if (_inFlight.TryAdd(key, flight))
             {
@@ -77,9 +77,13 @@ namespace GatewayGuard
                 new(TaskCreationOptions.RunContinuationsAsynchronously);
 
             private readonly long _created = Environment.TickCount64;
+            private readonly TimeSpan _ttl;
+            public bool IsExpired => TimeSpan.FromTicks(Environment.TickCount64 - _created) > _ttl;
 
-            public bool IsExpired => Environment.TickCount64 - _created > 30000;// TBD and make this configurable 
-
+            public Flight(TimeSpan ttl)
+            {
+                _ttl = ttl;
+            }
             public async Task<T> WaitAsync<T>(CancellationToken ct)
             {
                 using var reg = ct.Register(() => _tcs.TrySetCanceled(ct));

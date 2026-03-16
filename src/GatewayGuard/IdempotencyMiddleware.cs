@@ -82,8 +82,11 @@ public sealed class IdempotencyMiddleware
 
         if (lockValue is null)
         {
-            _logger.LogInformation("Lock already held for key {Key}, waiting for completion ({TraceId})", input.key, Activity.Current?.TraceId);
-            await _store.WaitForCompletionAsync(input.key, TimeSpan.FromSeconds(10));//TBD configurable
+            _logger.LogInformation(
+                "Lock already held for key {Key}, waiting for completion ({TraceId})", 
+                input.key, 
+                Activity.Current?.TraceId);
+            await _store.WaitForCompletionAsync(input.key, _options.IdempotencyLockExpiration);
             if (!await TryHandleCachedKey(context, input.key, input.fingerprint))
             { 
                 await context.SetResponseErrorConflictIdemKey();

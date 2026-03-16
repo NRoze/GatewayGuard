@@ -14,6 +14,7 @@ public sealed class IdempotencyOptions
     /// How long idempotency keys and their cached responses should be retained.
     /// </summary>
     public TimeSpan IdempotencyKeyExpiration { get; set; } = TimeSpan.FromMinutes(5);
+    public TimeSpan IdempotencyLockExpiration { get; set; } = TimeSpan.FromSeconds(5);
 
     /// <summary>
     /// How long retry requests cached duration should be retained.
