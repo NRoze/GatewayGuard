@@ -18,7 +18,6 @@ public sealed class IdempotencyMiddleware
     private readonly IIdempotencyStore _store;
     private readonly SingleFlight _singleFlight;
     private readonly IdempotencyOptions _options;
-    private readonly ILogger<IdempotencyMiddleware> _logger;
     private readonly ResiliencePipelineProvider<string> _pipelineProvider;
     /// <summary>
     /// Constructs a new instance of <see cref="IdempotencyMiddleware"/>.
@@ -31,14 +30,12 @@ public sealed class IdempotencyMiddleware
         IIdempotencyStore store,
         IdempotencyOptions options,
         SingleFlight singleFlight,
-        ILogger<IdempotencyMiddleware> logger,
         ResiliencePipelineProvider<string> pipelineProvider)
     {
         _next = next;
         _store = store;
         _options = options;
         _singleFlight = singleFlight;
-        _logger = logger;
         _pipelineProvider = pipelineProvider;
     }
     /// <summary>
@@ -89,12 +86,10 @@ public sealed class IdempotencyMiddleware
         {
             if (_options.FailClosedOnStoreError)
             {
-                _logger.LogError(ex, "Redis is down and FailClosedOnStoreError is true. Rejecting request.");
                 await context.SetResponseErrorUnavailableIdemStore();
                 return;
             }
 
-            _logger.LogWarning(ex, "Redis Idempotency layer degraded. Bypassing exact-once guarantees for request {Key}", input.key);
             await _next(context);
             return;
         }
@@ -115,7 +110,6 @@ public sealed class IdempotencyMiddleware
     {
         IdempotencyRecord? record = default;
 
-        _logger.LogInformation("Acquiring lock for key {Key} ({TraceId})", input.key, Activity.Current?.TraceId);
         var lockValue = await _store.TryAcquireLockAsync(
                 input.key,
                 _options.IdempotencyKeyExpiration)
@@ -123,10 +117,6 @@ public sealed class IdempotencyMiddleware
 
         if (lockValue is null)
         {
-            _logger.LogInformation(
-                "Lock already held for key {Key}, waiting for completion ({TraceId})",
-                input.key,
-                Activity.Current?.TraceId);
             await _store.WaitForCompletionAsync(input.key, _options.IdempotencyLockExpiration);
             record = await TryHandleCachedKey(context, input.key, input.fingerprint);
             if (record is null)
@@ -139,7 +129,6 @@ public sealed class IdempotencyMiddleware
 
         try
         {
-            _logger.LogInformation("Lock acquired for key {Key}, executing request ({TraceId})", input.key, Activity.Current?.TraceId);
             record = await TryHandleCachedKey(context, input.key, input.fingerprint);
 
             if (record is null)
@@ -151,7 +140,6 @@ public sealed class IdempotencyMiddleware
         {
             if (lockValue is not null)
             {
-                _logger.LogInformation("Releasing lock for key {Key} ({TraceId})", input.key, Activity.Current?.TraceId);
                 await _store.ReleaseLockAsync(input.key, lockValue).ConfigureAwait(false);
             }
         }

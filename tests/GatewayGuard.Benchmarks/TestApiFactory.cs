@@ -1,7 +1,7 @@
 ﻿using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 
-namespace GatewayGuard.Tests;
+namespace GatewayGuard.Benchmarks;
 
 public class TestApiFactory : WebApplicationFactory<Program>
 {

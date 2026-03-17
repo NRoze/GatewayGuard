@@ -67,7 +67,7 @@ public sealed class RedisIdempotencyStore : IIdempotencyStore
 
         await _db.StringSetAsync(
             ResponseKey(key),
-            JsonSerializer.Serialize(record),
+            JsonSerializer.SerializeToUtf8Bytes(record),
             _options.IdempotencyKeyExpiration).ConfigureAwait(false);
 
         await PublishCompletedAsync(key).ConfigureAwait(false);

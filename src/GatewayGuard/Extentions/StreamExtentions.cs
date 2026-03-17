@@ -26,11 +26,10 @@ static public class StreamExtentions
         /// <returns>A byte array containing the stream contents.</returns>
         public async Task<byte[]> ToByteArrayAsync()
         {
-            using (var temp = new MemoryStream())
-            {
-                await source.CopyToAsync(temp).ConfigureAwait(false);
-                return temp.ToArray();
-            }
+            using var temp = new MemoryStream();
+
+            await source.CopyToAsync(temp).ConfigureAwait(false);
+            return temp.ToArray();
         }
 
         /// <summary>
