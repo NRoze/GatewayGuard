@@ -21,9 +21,9 @@ public static class ServiceCollectionExtensions
         var options = new IdempotencyOptions();
         configure(options);
 
-        services.AddResiliencePipeline(options.CircuitBreakerPolicyName, builder =>
+        services.AddResiliencePipeline(options.ResiliencePolicyName, builder =>
         {
-            builder.AddTimeout(options.CircuitBreakerExpiration)
+            builder.AddTimeout(options.ResiliencePipelineExpiration)
                 .AddCircuitBreaker(options.CircuitBreakerStrategy);
         });
         services.AddSingleton(options);

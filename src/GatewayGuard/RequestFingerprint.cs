@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Http;
+﻿using GatewayGuard.Extentions;
+using Microsoft.AspNetCore.Http;
 using System.Buffers;
 using System.Security.Cryptography;
 using System.Text;

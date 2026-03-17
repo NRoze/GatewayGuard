@@ -1,6 +1,5 @@
 ﻿using Polly;
 using Polly.CircuitBreaker;
-using Polly.Retry;
 using Polly.Timeout;
 using StackExchange.Redis;
 
@@ -34,7 +33,7 @@ public sealed class IdempotencyOptions
     /// <summary>
     /// How long the circuit breaker should remain open before attempting to resume normal operation.
     /// </summary>
-    public TimeSpan CircuitBreakerExpiration { get; set; } = TimeSpan.FromSeconds(2);
+    public TimeSpan ResiliencePipelineExpiration { get; set; } = TimeSpan.FromSeconds(2);
 
     /// <summary>
     /// Timeout in milliseconds for Redis connection attempts.
@@ -99,5 +98,5 @@ public sealed class IdempotencyOptions
     /// The name of the resilience pipeline policy registered for circuit breaker management.
     /// Used to retrieve the circuit breaker from the resilience pipeline provider.
     /// </summary>
-    public string CircuitBreakerPolicyName { get; set; } = "GatewayGuardCircuitBreaker";
+    public string ResiliencePolicyName { get; set; } = "GatewayGuardCircuitBreaker";
 }

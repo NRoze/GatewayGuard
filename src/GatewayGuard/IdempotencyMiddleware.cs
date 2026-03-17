@@ -1,10 +1,8 @@
-﻿using Microsoft.AspNetCore.DataProtection.KeyManagement;
+﻿using GatewayGuard.Extentions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
-using Polly;
 using Polly.CircuitBreaker;
 using Polly.Registry;
-using Polly.Retry;
 using Polly.Timeout;
 using StackExchange.Redis;
 using System.Diagnostics;
@@ -77,7 +75,7 @@ public sealed class IdempotencyMiddleware
         {
             cachedRecord = await _singleFlight.ExecuteAsync(input.key, async (ct) =>
             {
-                var pipeline = _pipelineProvider.GetPipeline(_options.CircuitBreakerPolicyName);
+                var pipeline = _pipelineProvider.GetPipeline(_options.ResiliencePolicyName);
 
                 return await pipeline.ExecuteAsync(async innerCt =>
                     await ExecuteRequestAsync(context, input).ConfigureAwait(false), context.RequestAborted);
