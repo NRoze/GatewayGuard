@@ -20,6 +20,10 @@ public sealed class IdempotencyOptions
     /// How long idempotency keys and their cached responses should be retained.
     /// </summary>
     public TimeSpan IdempotencyKeyExpiration { get; set; } = TimeSpan.FromMinutes(5);
+
+    /// <summary>
+    /// How long to wait for a lock acquisition before timing out during single-flight coordination.
+    /// </summary>
     public TimeSpan IdempotencyLockExpiration { get; set; } = TimeSpan.FromSeconds(5);
 
     /// <summary>
@@ -27,8 +31,14 @@ public sealed class IdempotencyOptions
     /// </summary>
     public TimeSpan SingleFlightExpiration { get; set; } = TimeSpan.FromSeconds(5);
 
+    /// <summary>
+    /// How long the circuit breaker should remain open before attempting to resume normal operation.
+    /// </summary>
     public TimeSpan CircuitBreakerExpiration { get; set; } = TimeSpan.FromSeconds(2);
 
+    /// <summary>
+    /// Timeout in milliseconds for Redis connection attempts.
+    /// </summary>
     public int RedisConnectionTimeoutMs { get; set; } = 500;
 
     /// <summary>
@@ -60,6 +70,10 @@ public sealed class IdempotencyOptions
         {
             HttpMethod.Post
         };
+    /// <summary>
+    /// Configuration for the circuit breaker policy used to handle resilience and fault tolerance.
+    /// Defines failure thresholds and handling predicates for Redis-related exceptions.
+    /// </summary>
     public CircuitBreakerStrategyOptions CircuitBreakerStrategy { get; set; } =
         new CircuitBreakerStrategyOptions
         {
@@ -80,5 +94,10 @@ public sealed class IdempotencyOptions
     /// Defaults to False for maximum availability.
     /// </summary>
     public bool FailClosedOnStoreError { get; set; } = false;
+
+    /// <summary>
+    /// The name of the resilience pipeline policy registered for circuit breaker management.
+    /// Used to retrieve the circuit breaker from the resilience pipeline provider.
+    /// </summary>
     public string CircuitBreakerPolicyName { get; set; } = "GatewayGuardCircuitBreaker";
 }

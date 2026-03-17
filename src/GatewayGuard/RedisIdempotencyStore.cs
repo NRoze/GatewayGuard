@@ -38,6 +38,11 @@ public sealed class RedisIdempotencyStore : IIdempotencyStore
         _multiplexer = connectionMultiplexer;
         _db = connectionMultiplexer.GetDatabase();
     }
+    /// <summary>
+    /// Retrieves a cached response for the given idempotency key from Redis.
+    /// </summary>
+    /// <param name="key">The idempotency key to retrieve the cached response for.</param>
+    /// <returns>The cached record if found; otherwise <c>null</c>.</returns>
     public async Task<IdempotencyRecord?> GetResponse(string key)
     {
         var value = await _db.StringGetAsync(ResponseKey(key));
@@ -91,6 +96,12 @@ public sealed class RedisIdempotencyStore : IIdempotencyStore
         await Task.WhenAny(tcs.Task, Task.Delay(timeout));
         await sub.UnsubscribeAsync(channel, handler);
     }
+    /// <summary>
+    /// Attempts to acquire an exclusive lock for the given idempotency key using Redis SET NX (set if not exists).
+    /// </summary>
+    /// <param name="key">The idempotency key to lock.</param>
+    /// <param name="ttl">The time-to-live for the lock.</param>
+    /// <returns>A unique lock value if the lock was acquired; otherwise <c>null</c>.</returns>
     public async Task<string?> TryAcquireLockAsync(string key, TimeSpan ttl)
     {
         var lockValue = Guid.NewGuid().ToString();
@@ -104,6 +115,13 @@ public sealed class RedisIdempotencyStore : IIdempotencyStore
         return acquired ? lockValue : null;
     }
 
+    /// <summary>
+    /// Releases a lock acquired via <see cref="TryAcquireLockAsync"/> using a Lua script for atomic operation.
+    /// The lock is only released if the provided lock value matches the stored value.
+    /// </summary>
+    /// <param name="key">The idempotency key whose lock should be released.</param>
+    /// <param name="lockValue">The lock token returned from <see cref="TryAcquireLockAsync"/>.</param>
+    /// <returns>A task that completes with the result of the Lua script execution.</returns>
     public Task<RedisResult> ReleaseLockAsync(string key, string lockValue)
     {
         return _db.ScriptEvaluateAsync(

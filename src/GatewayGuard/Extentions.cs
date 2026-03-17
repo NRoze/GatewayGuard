@@ -68,6 +68,13 @@ namespace GatewayGuard
             return result;
         }
 
+        /// <summary>
+        /// Sets the HTTP response status code and writes the provided error message.
+        /// </summary>
+        /// <param name="context">The HTTP context.</param>
+        /// <param name="statusCode">The HTTP status code to set.</param>
+        /// <param name="message">The error message to write to the response body.</param>
+        /// <returns>A task that completes when the response has been written.</returns>
         static public async Task SetResponseError(
             this HttpContext context, int statusCode, string message)
         {
@@ -75,6 +82,11 @@ namespace GatewayGuard
             await context.Response.WriteAsync(message).ConfigureAwait(false);
         }
 
+        /// <summary>
+        /// Sets a 400 Bad Request response indicating that the required idempotency key header is missing.
+        /// </summary>
+        /// <param name="context">The HTTP context.</param>
+        /// <returns>A task that completes when the response has been written.</returns>
         static public async Task SetResponseErrorMissingIdemKey(this HttpContext context)
         {
             context.Response.StatusCode = StatusCodes.Status400BadRequest;
@@ -82,6 +94,11 @@ namespace GatewayGuard
                 ErrorMessageMissingIdempotencyKey).ConfigureAwait(false);
         }
 
+        /// <summary>
+        /// Sets a 409 Conflict response indicating that the idempotency key was used with a different request payload.
+        /// </summary>
+        /// <param name="context">The HTTP context.</param>
+        /// <returns>A task that completes when the response has been written.</returns>
         static public async Task SetResponseErrorConflictIdemKey(this HttpContext context)
         {
             context.Response.StatusCode = StatusCodes.Status409Conflict;
@@ -89,6 +106,11 @@ namespace GatewayGuard
                 ErrorMessageConflictIdempotencyKey).ConfigureAwait(false);
         }
 
+        /// <summary>
+        /// Sets a 500 Internal Server Error response for an unknown error condition.
+        /// </summary>
+        /// <param name="context">The HTTP context.</param>
+        /// <returns>A task that completes when the response has been written.</returns>
         static public async Task SetResponseErrorUnknown(this HttpContext context)
         {
             context.Response.StatusCode = StatusCodes.Status500InternalServerError;
@@ -96,6 +118,11 @@ namespace GatewayGuard
                 ErrorMessageUnknown).ConfigureAwait(false);
         }
 
+        /// <summary>
+        /// Sets a 503 Service Unavailable response indicating that the idempotency store is temporarily unreachable.
+        /// </summary>
+        /// <param name="context">The HTTP context.</param>
+        /// <returns>A task that completes when the response has been written.</returns>
         static public async Task SetResponseErrorUnavailableIdemStore(this HttpContext context)
         { 
             context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;

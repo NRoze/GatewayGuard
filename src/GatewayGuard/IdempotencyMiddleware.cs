@@ -107,6 +107,12 @@ public sealed class IdempotencyMiddleware
         }
     }
 
+    /// <summary>
+    /// Executes the idempotency logic for the current request, including lock acquisition, cache lookup, and response capture.
+    /// </summary>
+    /// <param name="context">The current HTTP context.</param>
+    /// <param name="input">A tuple containing the idempotency key and request fingerprint.</param>
+    /// <returns>A cached record if found or the response was captured; otherwise <c>null</c>.</returns>
     private async Task<IdempotencyRecord?> ExecuteRequestAsync(HttpContext context, (string key, string fingerprint) input)
     {
         IdempotencyRecord? record = default;
@@ -155,6 +161,11 @@ public sealed class IdempotencyMiddleware
         return record;
     }
 
+    /// <summary>
+    /// Extracts or generates the idempotency key and request fingerprint from the current HTTP request.
+    /// </summary>
+    /// <param name="context">The current HTTP context.</param>
+    /// <returns>A tuple containing the idempotency key and request fingerprint.</returns>
     private async Task<(string, string)> TryExtractKeyAndFingerprintAsync(HttpContext context)
     {
         var key = context.Request.Headers[_options.IdempotencyHeaderName].ToString();
@@ -167,6 +178,13 @@ public sealed class IdempotencyMiddleware
         return (key, fingerprint);
     }
 
+    /// <summary>
+    /// Retrieves a cached response for the given idempotency key and validates the request fingerprint.
+    /// </summary>
+    /// <param name="context">The current HTTP context.</param>
+    /// <param name="key">The idempotency key.</param>
+    /// <param name="fingerprint">The request fingerprint to validate against cached data.</param>
+    /// <returns>The cached record if found and fingerprint matches; otherwise <c>null</c>.</returns>
     private async Task<IdempotencyRecord?> TryHandleCachedKey(HttpContext context, string key, string fingerprint)
     {
         var cached = await _store.GetResponse(key).ConfigureAwait(false);
@@ -180,6 +198,13 @@ public sealed class IdempotencyMiddleware
         return cached;
     }
 
+    /// <summary>
+    /// Executes the next middleware in the pipeline, captures the response, and stores it for future idempotency replay.
+    /// </summary>
+    /// <param name="context">The current HTTP context.</param>
+    /// <param name="key">The idempotency key for storage.</param>
+    /// <param name="fingerprint">The request fingerprint for validation.</param>
+    /// <returns>A task that completes when the response has been executed and stored.</returns>
     private async Task ExecuteAndCaptureResponse(HttpContext context, string key, string fingerprint)
     {
         var originalBody = context.Response.Body;
@@ -205,8 +230,20 @@ public sealed class IdempotencyMiddleware
         }
     }
 
+    /// <summary>
+    /// Determines whether the current request method is configured for idempotency handling.
+    /// </summary>
+    /// <param name="context">The current HTTP context.</param>
+    /// <returns><c>true</c> if the request method is enabled for idempotency; otherwise <c>false</c>.</returns>
     private bool IsIdempotentMethod(HttpContext context) =>
         _options.EnabledForMethods.Contains(new HttpMethod(context.Request.Method));
+
+    /// <summary>
+    /// Replays a cached HTTP response to the client by restoring status code, headers, and body.
+    /// </summary>
+    /// <param name="context">The current HTTP context.</param>
+    /// <param name="record">The cached idempotency record containing the response to replay.</param>
+    /// <returns>A task that completes when the response has been written.</returns>
     private static async Task ReplayCachedResponse(HttpContext context, IdempotencyRecord record)
     {
         context.Response.StatusCode = record.StatusCode;
