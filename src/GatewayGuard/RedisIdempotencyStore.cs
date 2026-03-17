@@ -18,9 +18,9 @@ public sealed class RedisIdempotencyStore : IIdempotencyStore
             return 0
         end
         """;
-    static private RedisKey LockKey(string key) => string.Concat("idemp:", key, ":lock");
-    static private RedisKey ResponseKey(string key) => string.Concat("idemp:", key, ":response");
-    static private RedisChannel CompletedChannelKey(string key) => RedisChannel.Literal($"idem:{key}:done");
+    static private RedisKey LockKey(string key) => string.Concat("GatewayGuard:", key, ":lock");
+    static private RedisKey ResponseKey(string key) => string.Concat("GatewayGuard:", key, ":response");
+    static private RedisChannel CompletedChannelKey(string key) => RedisChannel.Literal($"GatewayGuard:{key}:done");
 
     private readonly IConnectionMultiplexer _multiplexer;
     private readonly IDatabase _db;

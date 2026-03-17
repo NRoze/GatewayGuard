@@ -11,6 +11,7 @@
     <Project Path="src/GatewayGuard/GatewayGuard.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/GatewayGuard.Benchmarks/GatewayGuard.Benchmarks.csproj" />
     <Project Path="tests/GatewayGuard.Tests/GatewayGuard.Tests.csproj" />
   </Folder>
 </Solution>

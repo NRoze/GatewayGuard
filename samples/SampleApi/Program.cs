@@ -11,7 +11,6 @@ builder.Services.AddGatewayGuard(options =>
     options.IdempotencyKeyExpiration = TimeSpan.FromMinutes(1);
     options.MaxConcurrentRequests = 500;
     options.RedisConnection = "localhost:6379";
-    options.CircuitBreakerThreshold = 0.2;
 });
 
 var app = builder.Build();

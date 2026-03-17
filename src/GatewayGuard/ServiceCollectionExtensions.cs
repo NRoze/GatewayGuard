@@ -1,5 +1,6 @@
-﻿using Microsoft.Extensions.DependencyInjection;
-using Microsoft.AspNetCore.Builder;
+﻿using Microsoft.AspNetCore.Builder;
+using Microsoft.Extensions.DependencyInjection;
+using Polly;
 using StackExchange.Redis;
 
 namespace GatewayGuard;
@@ -20,6 +21,11 @@ public static class ServiceCollectionExtensions
         var options = new IdempotencyOptions();
         configure(options);
 
+        services.AddResiliencePipeline(options.CircuitBreakerPolicyName, builder =>
+        {
+            builder.AddTimeout(options.CircuitBreakerExpiration)
+                .AddCircuitBreaker(options.CircuitBreakerStrategy);
+        });
         services.AddSingleton(options);
         services.AddSingleton<SingleFlight>();
         services.AddSingleton<IConnectionMultiplexer>(sp =>

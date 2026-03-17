@@ -1,6 +1,12 @@
 ﻿using Microsoft.AspNetCore.DataProtection.KeyManagement;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
+using Polly;
+using Polly.CircuitBreaker;
+using Polly.Registry;
+using Polly.Retry;
+using Polly.Timeout;
+using StackExchange.Redis;
 using System.Diagnostics;
 
 namespace GatewayGuard;
@@ -15,7 +21,7 @@ public sealed class IdempotencyMiddleware
     private readonly SingleFlight _singleFlight;
     private readonly IdempotencyOptions _options;
     private readonly ILogger<IdempotencyMiddleware> _logger;
-
+    private readonly ResiliencePipelineProvider<string> _pipelineProvider;
     /// <summary>
     /// Constructs a new instance of <see cref="IdempotencyMiddleware"/>.
     /// </summary>
@@ -27,13 +33,15 @@ public sealed class IdempotencyMiddleware
         IIdempotencyStore store,
         IdempotencyOptions options,
         SingleFlight singleFlight,
-        ILogger<IdempotencyMiddleware> logger)
+        ILogger<IdempotencyMiddleware> logger,
+        ResiliencePipelineProvider<string> pipelineProvider)
     {
         _next = next;
         _store = store;
         _options = options;
         _singleFlight = singleFlight;
         _logger = logger;
+        _pipelineProvider = pipelineProvider;
     }
     /// <summary>
     /// Processes an incoming HTTP request and enforces idempotency rules:
@@ -53,7 +61,7 @@ public sealed class IdempotencyMiddleware
 
         context.Request.EnableBuffering(bufferThreshold: 1024 * 64);
 
-        (string key, string fingerprint) input = 
+        (string key, string fingerprint) input =
             await TryExtractKeyAndFingerprintAsync(context).ConfigureAwait(false);
 
         if (string.IsNullOrWhiteSpace(input.key))
@@ -63,13 +71,40 @@ public sealed class IdempotencyMiddleware
             return;
         }
 
-        var cachedRecord = await _singleFlight.ExecuteAsync(input.key, async (ct) =>
+        IdempotencyRecord? cachedRecord = null;
+
+        try
         {
-            return await ExecuteRequestAsync(context, input).ConfigureAwait(false);
-        });
+            cachedRecord = await _singleFlight.ExecuteAsync(input.key, async (ct) =>
+            {
+                var pipeline = _pipelineProvider.GetPipeline(_options.CircuitBreakerPolicyName);
+
+                return await pipeline.ExecuteAsync(async innerCt =>
+                    await ExecuteRequestAsync(context, input).ConfigureAwait(false), context.RequestAborted);
+            });
+        }
+        catch (Exception ex) when (
+            ex is BrokenCircuitException ||
+            ex is RedisConnectionException ||
+            ex is RedisTimeoutException ||
+            ex is TimeoutRejectedException)
+        {
+            if (_options.FailClosedOnStoreError)
+            {
+                _logger.LogError(ex, "Redis is down and FailClosedOnStoreError is true. Rejecting request.");
+                await context.SetResponseErrorUnavailableIdemStore();
+                return;
+            }
+
+            _logger.LogWarning(ex, "Redis Idempotency layer degraded. Bypassing exact-once guarantees for request {Key}", input.key);
+            await _next(context);
+            return;
+        }
 
         if (cachedRecord is not null)
+        {
             await ReplayCachedResponse(context, cachedRecord);
+        }
     }
 
     private async Task<IdempotencyRecord?> ExecuteRequestAsync(HttpContext context, (string key, string fingerprint) input)
@@ -85,13 +120,13 @@ public sealed class IdempotencyMiddleware
         if (lockValue is null)
         {
             _logger.LogInformation(
-                "Lock already held for key {Key}, waiting for completion ({TraceId})", 
-                input.key, 
+                "Lock already held for key {Key}, waiting for completion ({TraceId})",
+                input.key,
                 Activity.Current?.TraceId);
             await _store.WaitForCompletionAsync(input.key, _options.IdempotencyLockExpiration);
             record = await TryHandleCachedKey(context, input.key, input.fingerprint);
             if (record is null)
-            { 
+            {
                 await context.SetResponseErrorUnknown();
             }
 

@@ -1,4 +1,10 @@
-﻿namespace GatewayGuard;
+﻿using Polly;
+using Polly.CircuitBreaker;
+using Polly.Retry;
+using Polly.Timeout;
+using StackExchange.Redis;
+
+namespace GatewayGuard;
 
 /// <summary>
 /// Options controlling idempotency middleware behavior and storage configuration.
@@ -21,6 +27,10 @@ public sealed class IdempotencyOptions
     /// </summary>
     public TimeSpan SingleFlightExpiration { get; set; } = TimeSpan.FromSeconds(5);
 
+    public TimeSpan CircuitBreakerExpiration { get; set; } = TimeSpan.FromSeconds(2);
+
+    public int RedisConnectionTimeoutMs { get; set; } = 500;
+
     /// <summary>
     /// Redis connection string used by the <see cref="RedisIdempotencyStore"/>.
     /// </summary>
@@ -37,11 +47,6 @@ public sealed class IdempotencyOptions
     public int MaxConcurrentRequests { get; set; } = 1000;
 
     /// <summary>
-    /// Threshold used by any circuit breaker logic (fraction of failures that triggers the breaker).
-    /// </summary>
-    public double CircuitBreakerThreshold { get; set; } = 0.1;
-
-    /// <summary>
     /// The set of HTTP methods for which idempotency behavior is applied by the middleware.
     /// </summary>
     /// <remarks>
@@ -55,6 +60,25 @@ public sealed class IdempotencyOptions
         {
             HttpMethod.Post
         };
+    public CircuitBreakerStrategyOptions CircuitBreakerStrategy { get; set; } =
+        new CircuitBreakerStrategyOptions
+        {
+            FailureRatio = 0.5,
+            SamplingDuration = TimeSpan.FromSeconds(1),
+            MinimumThroughput = 5,
+            BreakDuration = TimeSpan.FromSeconds(5),
+            ShouldHandle = new PredicateBuilder()
+                        .Handle<RedisConnectionException>()
+                        .Handle<RedisTimeoutException>()
+                        .Handle<TimeoutRejectedException>()
+        };
 
-    public int RedisConnectionTimeoutMs { get; set; } = 500;
+    /// <summary>
+    /// Determines behavior when the idempotency store (Redis) is unavailable.
+    /// True = Fail-Closed (returns 503 Service Unavailable).
+    /// False = Fail-Open (bypasses idempotency and executes the request anyway).
+    /// Defaults to False for maximum availability.
+    /// </summary>
+    public bool FailClosedOnStoreError { get; set; } = false;
+    public string CircuitBreakerPolicyName { get; set; } = "GatewayGuardCircuitBreaker";
 }

@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.Text;
+using static System.Net.Mime.MediaTypeNames;
 
 namespace GatewayGuard
 {
@@ -94,12 +95,20 @@ namespace GatewayGuard
             await context.Response.WriteAsync(
                 ErrorMessageUnknown).ConfigureAwait(false);
         }
-        
+
+        static public async Task SetResponseErrorUnavailableIdemStore(this HttpContext context)
+        { 
+            context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+            await context.Response.WriteAsync(ErrorMessageUnavailableIdempotencyStore);
+        }
+
         private const string ErrorMessageMissingIdempotencyKey =
             "Missing required idempotency key header.";
         private const string ErrorMessageConflictIdempotencyKey =
             "Idempotency key already used with a different payload.";
         private const string ErrorMessageUnknown =
             "An unknown error occurred while processing the request.";
+        private const string ErrorMessageUnavailableIdempotencyStore =
+            "Idempotency store is temporarily unavailable.";
     }
 }

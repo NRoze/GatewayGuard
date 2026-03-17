@@ -1,8 +1,12 @@
-﻿
+
 using FluentAssertions;
 using SampleApi;
 using System.Net;
 using System.Net.Http.Json;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using StackExchange.Redis;
 
 namespace GatewayGuard.Tests.IntegrationTests;
 
@@ -289,5 +293,114 @@ public class IdempotencyTests : IClassFixture<TestApiFactory>
         body.Should().Be("Success");
 
         TestState.ExecutionCount.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task CircuitBreaker_FailOpen_Should_Bypass_Idempotency_And_Return_200()
+    {
+        // Arrange
+        using var brokenFactory = new TestApiFactory().WithWebHostBuilder(builder =>
+        {
+            builder.ConfigureServices(services =>
+            {
+                var descriptor = services.SingleOrDefault(d => d.ServiceType == typeof(IConnectionMultiplexer));
+                if (descriptor != null) services.Remove(descriptor);
+                
+                services.AddSingleton<IConnectionMultiplexer>(sp =>
+                {
+                    // An invalid host to trigger immediate connection failures
+                    var config = ConfigurationOptions.Parse("invalid-host:9999,abortConnect=false,connectTimeout=100");
+                    return ConnectionMultiplexer.Connect(config);
+                });
+            });
+        });
+
+        var client = brokenFactory.CreateClient();
+        
+        var req = new HttpRequestMessage(HttpMethod.Post, "/orders");
+        req.Headers.Add("X-Idempotency-Key", "fail-open-test-key");
+        req.Content = JsonContent.Create(new { amount = 100 });
+        
+        // Act
+        // This hits the invalid redis, triggers Polly CircuitBreaker, and gracefully degrades
+        var res = await client.SendAsync(req);
+        
+        // Assert
+        res.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task CircuitBreaker_FailClosed_Should_Return_503_ServiceUnavailable()
+    {
+        // Arrange
+        using var brokenFactory = new TestApiFactory().WithWebHostBuilder(builder =>
+        {
+            builder.ConfigureServices(services =>
+            {
+                var optionsDescriptor = services.SingleOrDefault(d => d.ImplementationInstance is IdempotencyOptions);
+                if (optionsDescriptor != null && optionsDescriptor.ImplementationInstance is IdempotencyOptions options)
+                {
+                    options.FailClosedOnStoreError = true;
+                }
+                
+                var descriptor = services.SingleOrDefault(d => d.ServiceType == typeof(IConnectionMultiplexer));
+                if (descriptor != null) services.Remove(descriptor);
+                
+                services.AddSingleton<IConnectionMultiplexer>(sp =>
+                {
+                    var config = ConfigurationOptions.Parse("invalid-host:9999,abortConnect=false,connectTimeout=100");
+                    return ConnectionMultiplexer.Connect(config);
+                });
+            });
+        });
+
+        var client = brokenFactory.CreateClient();
+        
+        var req = new HttpRequestMessage(HttpMethod.Post, "/orders");
+        req.Headers.Add("X-Idempotency-Key", "fail-closed-test-key");
+        req.Content = JsonContent.Create(new { amount = 100 });
+        
+        // Act
+        var res = await client.SendAsync(req);
+        
+        // Assert
+        res.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        var body = await res.Content.ReadAsStringAsync();
+        body.Should().Be("Idempotency store is temporarily unavailable.");
+    }
+
+    [Fact]
+    public async Task Performance_Cached_Response_Should_Be_Faster_Than_Initial_Request()
+    {
+        // Arrange
+        var key = $"latency-test-{Guid.NewGuid()}";
+        
+        var req1 = new HttpRequestMessage(HttpMethod.Post, "/orders");
+        req1.Headers.Add("X-Idempotency-Key", key);
+        req1.Content = JsonContent.Create(new { amount = 100 });
+
+        var req2 = new HttpRequestMessage(HttpMethod.Post, "/orders");
+        req2.Headers.Add("X-Idempotency-Key", key);
+        req2.Content = JsonContent.Create(new { amount = 100 });
+
+        // Act - Initial Request (Cold Start)
+        var sw1 = System.Diagnostics.Stopwatch.StartNew();
+        var res1 = await _client.SendAsync(req1);
+        sw1.Stop();
+
+        // Act - Second Request (Cached Hit)
+        var sw2 = System.Diagnostics.Stopwatch.StartNew();
+        var res2 = await _client.SendAsync(req2);
+        sw2.Stop();
+
+        // Assert
+        res1.StatusCode.Should().Be(HttpStatusCode.OK);
+        res2.StatusCode.Should().Be(HttpStatusCode.OK);
+        
+        // The mock processing delay in /orders is 10-50ms.
+        // The cached response should completely bypass this.
+        // In a real-world scenario, sw2.ElapsedMilliseconds should be < 5ms.
+        sw2.ElapsedMilliseconds.Should().BeLessThan(sw1.ElapsedMilliseconds);
+        TestState.ExecutionCount.Should().Be(1);
     }
 }
