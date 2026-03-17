@@ -1,5 +1,4 @@
-﻿using GatewayGuard.Enums;
-using Microsoft.AspNetCore.Http;
+﻿using Microsoft.AspNetCore.Http;
 using StackExchange.Redis;
 using System.Text.Json;
 
@@ -19,9 +18,8 @@ public sealed class RedisIdempotencyStore : IIdempotencyStore
             return 0
         end
         """;
-    static private string LockKey(string key) => $"idemp:{key}:lock";
-    static private string StateKey(string key) => $"idemp:{key}:state";
-    static private string ResponseKey(string key) => $"idemp:{key}:response";
+    static private RedisKey LockKey(string key) => string.Concat("idemp:", key, ":lock");
+    static private RedisKey ResponseKey(string key) => string.Concat("idemp:", key, ":response");
     static private RedisChannel CompletedChannelKey(string key) => RedisChannel.Literal($"idem:{key}:done");
 
     private readonly IConnectionMultiplexer _multiplexer;
@@ -40,41 +38,6 @@ public sealed class RedisIdempotencyStore : IIdempotencyStore
         _multiplexer = connectionMultiplexer;
         _db = connectionMultiplexer.GetDatabase();
     }
-    //public async Task<bool> TryStartRequest(string key)
-    //{
-    //    return await _db.StringSetAsync(
-    //        StateKey(key),
-    //        IdempotencyState.InProgress.ToString(),
-    //        _options.IdempotencyKeyExpiration,
-    //        When.NotExists);
-    //}
-    //public async Task<IdempotencyState?> GetState(string key)
-    //{
-    //    var value = await _db.StringGetAsync(StateKey(key));
-
-    //    if (value.IsNullOrEmpty)
-    //        return null;
-
-    //    return Enum.Parse<IdempotencyState>(value!);
-    //}
-    private async Task SaveResponse(string key, IdempotencyRecord response)
-    {
-        var json = JsonSerializer.Serialize(response);
-
-        var batch = _db.CreateBatch();
-
-        var t1 = batch.StringSetAsync(
-            ResponseKey(key), 
-            json, 
-            _options.IdempotencyKeyExpiration);
-        var t2 = batch.StringSetAsync(
-            StateKey(key), 
-            IdempotencyState.Completed.ToString(), 
-            _options.IdempotencyKeyExpiration);
-
-        batch.Execute();
-        await Task.WhenAll(t1, t2);
-    }
     public async Task<IdempotencyRecord?> GetResponse(string key)
     {
         var value = await _db.StringGetAsync(ResponseKey(key));
@@ -84,18 +47,6 @@ public sealed class RedisIdempotencyStore : IIdempotencyStore
 
         return JsonSerializer.Deserialize<IdempotencyRecord>(((byte[])value!).AsSpan());
     }
-    /// <summary>
-    /// Retrieves the cached idempotency record for the specified key.
-    /// </summary>
-    /// <param name="key">The idempotency key.</param>
-    /// <returns>The <see cref="IdempotencyRecord"/> if found; otherwise <c>null</c>.</returns>
-    //public async Task<IdempotencyRecord?> GetAsync(string key)
-    //{
-    //    if (string.IsNullOrEmpty(key)) return null;
-
-    //    var data = await _db.StringGetAsync(key).ConfigureAwait(false);
-    //    return data.HasValue ? JsonSerializer.Deserialize<IdempotencyRecord>(((byte[])data!).AsSpan()) : null;
-    //}
 
     /// <summary>
     /// Stores the provided response and request hash under the given idempotency key.
@@ -109,7 +60,11 @@ public sealed class RedisIdempotencyStore : IIdempotencyStore
 
         var record = await IdempotencyRecord.CreateAsync(requestHash, response);
 
-        await SaveResponse(key, record).ConfigureAwait(false);
+        await _db.StringSetAsync(
+            ResponseKey(key),
+            JsonSerializer.Serialize(record),
+            _options.IdempotencyKeyExpiration).ConfigureAwait(false);
+
         await PublishCompletedAsync(key).ConfigureAwait(false);
     }
 
@@ -127,15 +82,14 @@ public sealed class RedisIdempotencyStore : IIdempotencyStore
         var sub = _multiplexer.GetSubscriber();
         var tcs = new TaskCompletionSource();
         var channel = CompletedChannelKey(key);
-
-        await sub.SubscribeAsync(channel, (_, _) =>
+        var handler = new Action<RedisChannel, RedisValue>((_, _) =>
         {
             tcs.TrySetResult();
         });
 
+        await sub.SubscribeAsync(channel, handler);
         await Task.WhenAny(tcs.Task, Task.Delay(timeout));
-
-        await sub.UnsubscribeAsync(channel);
+        await sub.UnsubscribeAsync(channel, handler);
     }
     public async Task<string?> TryAcquireLockAsync(string key, TimeSpan ttl)
     {

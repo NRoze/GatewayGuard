@@ -45,14 +45,13 @@ public sealed class IdempotencyMiddleware
     /// <returns>A task that completes when request processing is finished.</returns>
     public async Task InvokeAsync(HttpContext context)
     {
-        //_logger.LogInformation("Processing request {Method} {Path} ({TraceId})", context.Request.Method, context.Request.Path, Activity.Current?.TraceId);
         if (!IsIdempotentMethod(context))
         {
             await _next(context);
             return;
         }
 
-        context.Request.EnableBuffering();
+        context.Request.EnableBuffering(bufferThreshold: 1024 * 64);
 
         (string key, string fingerprint) input = 
             await TryExtractKeyAndFingerprintAsync(context).ConfigureAwait(false);
@@ -64,16 +63,19 @@ public sealed class IdempotencyMiddleware
             return;
         }
 
-        await _singleFlight.ExecuteAsync(input.key, async (ct) =>
+        var cachedRecord = await _singleFlight.ExecuteAsync(input.key, async (ct) =>
         {
-            await ExecuteRequestAsync(context, input).ConfigureAwait(false);
-
-            return context.Response;
+            return await ExecuteRequestAsync(context, input).ConfigureAwait(false);
         });
+
+        if (cachedRecord is not null)
+            await ReplayCachedResponse(context, cachedRecord);
     }
 
-    private async Task ExecuteRequestAsync(HttpContext context, (string key, string fingerprint) input)
+    private async Task<IdempotencyRecord?> ExecuteRequestAsync(HttpContext context, (string key, string fingerprint) input)
     {
+        IdempotencyRecord? record = default;
+
         _logger.LogInformation("Acquiring lock for key {Key} ({TraceId})", input.key, Activity.Current?.TraceId);
         var lockValue = await _store.TryAcquireLockAsync(
                 input.key,
@@ -87,19 +89,21 @@ public sealed class IdempotencyMiddleware
                 input.key, 
                 Activity.Current?.TraceId);
             await _store.WaitForCompletionAsync(input.key, _options.IdempotencyLockExpiration);
-            if (!await TryHandleCachedKey(context, input.key, input.fingerprint))
+            record = await TryHandleCachedKey(context, input.key, input.fingerprint);
+            if (record is null)
             { 
-                await context.SetResponseErrorConflictIdemKey();
+                await context.SetResponseErrorUnknown();
             }
-            var bodyString = context.Request.Body.CanSeek ? new StreamReader(context.Request.Body).ReadToEnd() : "<non-seekable-body>";
-            _logger.LogInformation("Finished waiting for key {Key}:{Body} ({TraceId})", input.key, bodyString, Activity.Current?.TraceId);
-            return;
+
+            return record;
         }
 
         try
         {
             _logger.LogInformation("Lock acquired for key {Key}, executing request ({TraceId})", input.key, Activity.Current?.TraceId);
-            if (!await TryHandleCachedKey(context, input.key, input.fingerprint))
+            record = await TryHandleCachedKey(context, input.key, input.fingerprint);
+
+            if (record is null)
             {
                 await ExecuteAndCaptureResponse(context, input.key, input.fingerprint);
             }
@@ -112,6 +116,8 @@ public sealed class IdempotencyMiddleware
                 await _store.ReleaseLockAsync(input.key, lockValue).ConfigureAwait(false);
             }
         }
+
+        return record;
     }
 
     private async Task<(string, string)> TryExtractKeyAndFingerprintAsync(HttpContext context)
@@ -126,27 +132,17 @@ public sealed class IdempotencyMiddleware
         return (key, fingerprint);
     }
 
-    private async Task<bool> TryHandleCachedKey(HttpContext context, string key, string fingerprint)
+    private async Task<IdempotencyRecord?> TryHandleCachedKey(HttpContext context, string key, string fingerprint)
     {
         var cached = await _store.GetResponse(key).ConfigureAwait(false);
 
-        //_logger.LogInformation("Checking for cached response for key {Key} ({TraceId})", key, Activity.Current?.TraceId);
-        if (cached != null)
+        if (cached is not null && cached.RequestHash != fingerprint)
         {
-            //_logger.LogInformation("Cached response found for key {Key} (TraceId: {TraceId})", key, Activity.Current?.TraceId);
-            if (cached.RequestHash == fingerprint)
-            {
-                await ReplayCachedResponse(context, cached);
-                return true;
-            }
-            else
-            {
-                await context.SetResponseErrorConflictIdemKey();
-                return true;
-            }
+            await context.SetResponseErrorConflictIdemKey();
+            return null;
         }
 
-        return false;
+        return cached;
     }
 
     private async Task ExecuteAndCaptureResponse(HttpContext context, string key, string fingerprint)

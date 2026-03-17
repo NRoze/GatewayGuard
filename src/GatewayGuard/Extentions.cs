@@ -17,6 +17,11 @@ namespace GatewayGuard
         /// <returns>The resulting position (should be 0).</returns>
         static public long SeekBegin(this Stream source)
         {
+            if (!source.CanSeek)
+            {
+                return source.Position;
+            }
+
             return source.Seek(0, SeekOrigin.Begin);
         }
 
@@ -43,7 +48,6 @@ namespace GatewayGuard
         {
             byte[] result = [];
 
-
             if (source == null)
             {
                 return result;
@@ -58,7 +62,6 @@ namespace GatewayGuard
             else
             {
                 result = await source.ToByteArrayAsync();
-                source = new MemoryStream(result);
             }
 
             return result;

@@ -7,13 +7,13 @@ namespace GatewayGuard
         private readonly ConcurrentDictionary<string, Flight> _inFlight = new();
         private readonly TimeSpan _ttl;
         private readonly int _maxEntries;
-        private readonly IdempotencyOptions _options;
+        private readonly Timer _resetTimer;
 
         public SingleFlight(IdempotencyOptions options)
         {
-            _options = options;
             _ttl = options.SingleFlightExpiration;
             _maxEntries = options.MaxConcurrentRequests;
+            _resetTimer = new Timer(_ => CleanupIfNeeded(), null, _ttl, _ttl);
         }
 
         public async Task<T> ExecuteAsync<T>(
@@ -21,17 +21,15 @@ namespace GatewayGuard
             Func<CancellationToken, Task<T>> action,
             CancellationToken callerToken = default)
         {
-            CleanupIfNeeded();
-
             var flight = new Flight(_ttl);
 
             if (_inFlight.TryAdd(key, flight))
             {
                 await RunAsync(key, flight, action);
             }
-            else
+            else if (_inFlight.TryGetValue(key, out var existing))
             {
-                flight = _inFlight[key];
+                flight = existing;
             }
 
             return await flight.WaitAsync<T>(callerToken);
@@ -53,7 +51,7 @@ namespace GatewayGuard
             }
             finally
             {
-                _inFlight.TryRemove(new KeyValuePair<string, Flight>(key, flight));
+                _inFlight.TryRemove(key, out _);
             }
         }
 
@@ -78,7 +76,7 @@ namespace GatewayGuard
 
             private readonly long _created = Environment.TickCount64;
             private readonly TimeSpan _ttl;
-            public bool IsExpired => TimeSpan.FromTicks(Environment.TickCount64 - _created) > _ttl;
+            public bool IsExpired => TimeSpan.FromMilliseconds(Environment.TickCount64 - _created) > _ttl;
 
             public Flight(TimeSpan ttl)
             {

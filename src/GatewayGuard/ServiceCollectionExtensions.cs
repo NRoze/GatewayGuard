@@ -28,7 +28,7 @@ public static class ServiceCollectionExtensions
 
             config.ConnectTimeout = options.RedisConnectionTimeoutMs;
 
-            return ConnectionMultiplexer.Connect(options.RedisConnection);
+            return ConnectionMultiplexer.Connect(config);
         });
         services.AddSingleton<IIdempotencyStore, RedisIdempotencyStore>();
 
