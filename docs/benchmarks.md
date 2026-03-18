@@ -16,13 +16,13 @@ The table below details the performance characteristics for simple requests (`Ec
 
 | Scenario | Guard Enabled | Fingerprint Enabled | Mean Duration | Median Duration | Notes |
 |----------|---------------|---------------------|--------------:|----------------:|-------|
-| **Baseline (No Guard)** | `false` | `false` | `42.14 μs` | `40.91 μs` | The baseline processing time without the idempotency middleware. |
-| **Baseline with Contention**| `false` | `false` | `185.96 μs` | `182.97 μs` | Simulates concurrent requests hitting the endpoint simultaneously. |
-| **No Guard (Header Only)** | `false` | `true` | `40.63 μs` | `39.81 μs` | Minimal difference; fingerprinting is ignored since the guard is disabled. |
-| **Guard Enabled (Header)** | `true` | `false` | `2,572.68 μs` | `2,347.30 μs` | Idempotency guard checking Redis cache. Reflects typical Redis I/O overhead. |
-| **Guard + Contention (Header)**| `true` | `false` | `3,444.61 μs` | `3,248.16 μs` | Idempotency guard under contention using standard idempotency keys. |
-| **Guard Enabled (Fingerprint)**| `true` | `true` | `3,932.28 μs` | `3,753.49 μs` | Uses full body hashing for key generation when header is missing. |
-| **Guard + Contention (Fp)** | `true` | `true` | `3,313.03 μs` | `3,045.53 μs` | Fingerprinting under heavy contention. |
+| **Baseline (No Guard)**		 | `false` | `false` | `42.14 μs`    | `40.91 μs` | The baseline processing time without the idempotency middleware. |
+| **Baseline with Contention**   | `false` | `false` | `185.96 μs`   | `182.97 μs` | Simulates concurrent requests hitting the endpoint simultaneously. |
+| **No Guard (Header Only)**	 | `false` | `true`  | `40.63 μs`    | `39.81 μs` | Minimal difference; fingerprinting is ignored since the guard is disabled. |
+| **Guard Enabled (Header)**	 | `true`  | `false` | `2,572.68 μs` | `2,347.30 μs` | Idempotency guard checking Redis cache. Reflects typical Redis I/O overhead. |
+| **Guard + Contention (Header)**| `true`  | `false` | `3,444.61 μs` | `3,248.16 μs` | Idempotency guard under contention using standard idempotency keys. |
+| **Guard Enabled (Fingerprint)**| `true`  | `true`  | `3,932.28 μs` | `3,753.49 μs` | Uses full body hashing for key generation when header is missing. |
+| **Guard + Contention (Fp)**	 | `true`  | `true`  | `3,313.03 μs` | `3,045.53 μs` | Fingerprinting under heavy contention. |
 
 ### Key Takeaways
 
