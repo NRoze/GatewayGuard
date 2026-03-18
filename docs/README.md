@@ -49,6 +49,7 @@ app.UseGatewayGuard();
 
 - Architecture overview: `docs/architecture.md`
 - Usage and examples: `docs/usage.md`
+- Performance benchmarks: `docs/benchmarks.md`
 
 ## Contribution
 
@@ -60,4 +61,4 @@ Contributions are welcome. Please follow these guidelines:
 
 ## License
 
-See the repository license (if present) or add one before publishing.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

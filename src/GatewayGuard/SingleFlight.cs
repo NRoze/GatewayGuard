@@ -1,4 +1,4 @@
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
 
 namespace GatewayGuard;
 
@@ -110,8 +110,7 @@ public sealed class SingleFlight
         /// <returns>A task that completes with the flight result.</returns>
         public async Task<T> WaitAsync<T>(CancellationToken ct)
         {
-            using var reg = ct.Register(() => _tcs.TrySetCanceled(ct));
-            var result = await _tcs.Task.ConfigureAwait(false);
+            var result = await _tcs.Task.WaitAsync(ct).ConfigureAwait(false);
 
             return (T)result!;
         }

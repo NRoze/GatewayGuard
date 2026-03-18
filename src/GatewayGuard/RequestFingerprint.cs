@@ -9,6 +9,7 @@ namespace GatewayGuard;
 internal static class RequestFingerprint
 {
     private const int bufferSize = 8192; 
+
     /// <summary>
     /// Generates a deterministic fingerprint for the given HTTP request.
     /// The fingerprint includes the request method, path, query string and the request body.

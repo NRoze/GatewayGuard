@@ -1,4 +1,4 @@
-﻿namespace GatewayGuard.Extensions;
+namespace GatewayGuard.Extensions;
 
 /// <summary>
 /// Stream helper extension methods used by GatewayGuard to read/copy/seek request and response streams.
@@ -44,25 +44,25 @@ static public class StreamExtensions
         /// <returns>A byte array containing the stream content.</returns>
         public async Task<byte[]> CopyAsync()
         {
-            byte[] result = [];
-
             if (source == null)
             {
-                return result;
+                return [];
+            }
+
+            if (source is MemoryStream ms)
+            {
+                return ms.ToArray();
             }
 
             if (source.CanSeek)
             {
                 source.Position = 0;
-                result = await source.ToByteArrayAsync();
+                var result = await source.ToByteArrayAsync();
                 source.Position = 0;
-            }
-            else
-            {
-                result = await source.ToByteArrayAsync();
+                return result;
             }
 
-            return result;
+            return await source.ToByteArrayAsync();
         }
     }
 }

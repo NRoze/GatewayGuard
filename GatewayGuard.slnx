@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/docs/">
     <File Path="docs/architecture.md" />
+    <File Path="docs/benchmarks.md" />
     <File Path="docs/README.md" />
     <File Path="docs/usage.md" />
   </Folder>

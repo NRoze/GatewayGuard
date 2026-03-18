@@ -4,6 +4,14 @@
 		<TargetFramework>net10.0</TargetFramework>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
+		<PackageId>GatewayGuard</PackageId>
+		<Version>1.0.0-rc.1 </Version>
+		<Authors>Nadav Rozenbaum</Authors>
+		<Description>Idempotency library for .NET</Description>
+		<PackageTags>idempotency;dotnet</PackageTags>
+		<RepositoryUrl>https://github.com/NRoze/GatewayGuard</RepositoryUrl>
+		<GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+		<TreatWarningsAsErrors>true</TreatWarningsAsErrors>
 	</PropertyGroup>
 
 	<ItemGroup>

@@ -403,4 +403,36 @@ public class IdempotencyTests : IClassFixture<TestApiFactory>
         sw2.ElapsedMilliseconds.Should().BeLessThan(sw1.ElapsedMilliseconds);
         TestState.ExecutionCount.Should().Be(1);
     }
+
+    [Fact]
+    public async Task Concurrent_Requests_With_One_Cancelled_Should_Not_Fail_Others()
+    {
+        var key = $"cancel-test-{Guid.NewGuid()}";
+        using var cancelSource = new CancellationTokenSource();
+        
+        var requestCreator = () => 
+        {
+            var req = new HttpRequestMessage(HttpMethod.Post, "/orders");
+            req.Headers.Add("X-Idempotency-Key", key);
+            req.Content = JsonContent.Create(new { amount = 100 });
+            return req;
+        };
+
+        var task1 = _client.SendAsync(requestCreator());
+        var task2 = _client.SendAsync(requestCreator(), cancelSource.Token);
+        var task3 = _client.SendAsync(requestCreator());
+
+        cancelSource.CancelAfter(TimeSpan.FromMilliseconds(5));
+
+        var ex = await Record.ExceptionAsync(() => task2);
+        ex.Should().BeAssignableTo<OperationCanceledException>();
+
+        var res1 = await task1;
+        var res3 = await task3;
+
+        res1.StatusCode.Should().Be(HttpStatusCode.OK);
+        res3.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        TestState.ExecutionCount.Should().Be(1);
+    }
 }
