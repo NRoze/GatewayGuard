@@ -5,14 +5,30 @@
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
 		<PackageId>GatewayGuard</PackageId>
-		<Version>1.0.0-rc.1 </Version>
+		<Version>1.0.0-rc.1</Version>
 		<Authors>Nadav Rozenbaum</Authors>
 		<Description>Idempotency library for .NET</Description>
 		<PackageTags>idempotency;dotnet</PackageTags>
+		
+		<PackageProjectUrl>https://github.com/NRoze/GatewayGuard</PackageProjectUrl>
 		<RepositoryUrl>https://github.com/NRoze/GatewayGuard</RepositoryUrl>
+		<RepositoryType>git</RepositoryType>
+
+		<PackageLicenseFile>LICENSE</PackageLicenseFile>
+		<PackageReadmeFile>README.md</PackageReadmeFile>
+		
+		<PublishRepositoryUrl>true</PublishRepositoryUrl>
+		<EmbedUntrackedSources>true</EmbedUntrackedSources>
+		<IncludeSymbols>true</IncludeSymbols>
+		<SymbolPackageFormat>snupkg</SymbolPackageFormat>
 		<GeneratePackageOnBuild>true</GeneratePackageOnBuild>
 		<TreatWarningsAsErrors>true</TreatWarningsAsErrors>
 	</PropertyGroup>
+
+	<ItemGroup>
+		<None Include="..\..\LICENSE" Pack="true" PackagePath="" />
+		<None Include="..\..\docs\README.md" Pack="true" PackagePath="" />
+	</ItemGroup>
 
 	<ItemGroup>
 		<FrameworkReference Include="Microsoft.AspNetCore.App" />
