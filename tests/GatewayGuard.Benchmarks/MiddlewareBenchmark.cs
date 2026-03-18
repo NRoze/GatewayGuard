@@ -1,8 +1,9 @@
-﻿using BenchmarkDotNet.Attributes;
+using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Running;
 
 namespace GatewayGuard.Benchmarks
 {
+    //[MemoryDiagnoser(true)]
     [ShortRunJob()]
     public class MiddlewareBenchmark
     {
@@ -25,6 +26,7 @@ namespace GatewayGuard.Benchmarks
         public void Setup()
         {
             Environment.SetEnvironmentVariable("GatewayGuard__Enabled", GuardEnabled);
+            Environment.SetEnvironmentVariable("FingerprintEnabled__Enabled", FingerprintEnabled);
 
             _client = _factory.CreateClient();
         }
@@ -33,6 +35,7 @@ namespace GatewayGuard.Benchmarks
         public void Cleanup()
         {
             Environment.SetEnvironmentVariable("GatewayGuard__Enabled", null);
+            Environment.SetEnvironmentVariable("FingerprintEnabled__Enabled", null);
         }
 
         [Benchmark]
