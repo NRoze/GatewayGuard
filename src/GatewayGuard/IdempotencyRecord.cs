@@ -1,4 +1,4 @@
-﻿using GatewayGuard.Extentions;
+﻿using GatewayGuard.Extensions;
 using Microsoft.AspNetCore.Http;
 
 namespace GatewayGuard;
@@ -38,7 +38,7 @@ public sealed class IdempotencyRecord
     {
         var headers = response.Headers.ToDictionary(
             h => h.Key,
-            h => string.Join(",", h.Value.ToArray()));
+            h => h.Value.ToString());
 
         return new IdempotencyRecord
         {

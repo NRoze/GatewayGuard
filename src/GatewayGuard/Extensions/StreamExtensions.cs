@@ -1,6 +1,11 @@
-﻿namespace GatewayGuard.Extentions;
+﻿namespace GatewayGuard.Extensions;
 
-static public class StreamExtentions
+/// <summary>
+/// Stream helper extension methods used by GatewayGuard to read/copy/seek request and response streams.
+/// These methods are intentionally minimal and optimized for common server scenarios (preserve position when possible,
+/// use pooled buffers when reading into memory).
+/// </summary>
+static public class StreamExtensions
 {
     extension(Stream source)
     {

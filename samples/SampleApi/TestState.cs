@@ -2,5 +2,16 @@
 
 public static class TestState
 {
-    public static int ExecutionCount = 0;
+    static private int executionCount = 0;
+    static public int ExecutionCount { get { return executionCount; } }
+   
+    static public void Increment()
+    {
+        Interlocked.Increment(ref executionCount);
+    }
+
+    public static void Reset()
+    {
+        executionCount = 0;
+    }
 }

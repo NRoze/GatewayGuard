@@ -1,6 +1,5 @@
-﻿using GatewayGuard.Extentions;
+﻿using GatewayGuard.Extensions;
 using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.Logging;
 using Polly.CircuitBreaker;
 using Polly.Registry;
 using Polly.Timeout;
@@ -50,7 +49,7 @@ public sealed class IdempotencyMiddleware
     {
         if (!IsIdempotentMethod(context))
         {
-            await _next(context);
+            await CallNext(context);
             return;
         }
 
@@ -90,7 +89,7 @@ public sealed class IdempotencyMiddleware
                 return;
             }
 
-            await _next(context);
+            await CallNext(context);
             return;
         }
 
@@ -199,12 +198,14 @@ public sealed class IdempotencyMiddleware
 
         try
         {
-            await _next(context).ConfigureAwait(false);
+            await CallNext(context);
 
             if (context.Response.StatusCode < 500)
             {
                 memStream.SeekBegin();
-                await _store.SaveResponse(key, fingerprint, context.Response).ConfigureAwait(false);
+
+                if ((ulong)memStream.Length <= (ulong)_options.MaxCachedBodySizeBytes)
+                    await _store.SaveResponse(key, fingerprint, context.Response).ConfigureAwait(false);
             }
 
             memStream.SeekBegin();
@@ -240,5 +241,28 @@ public sealed class IdempotencyMiddleware
         }
 
         await context.Response.Body.WriteAsync(record.Body).ConfigureAwait(false);
+    }
+
+    private async Task CallNext(HttpContext context)
+    {
+        if (!_options.EnableMetrics)
+        { 
+            await _next(context).ConfigureAwait(false);
+            return;
+        }
+
+        var sw = Stopwatch.StartNew();
+
+        await _next(context).ConfigureAwait(false);
+        sw.Stop();
+
+        GatewayGuardMetrics.RequestDurationMs.Record(
+            sw.Elapsed.TotalMilliseconds,
+            new KeyValuePair<string, object?>("method", context.Request.Method));
+
+        GatewayGuardMetrics.RequestsTotal.Add(
+            1,
+            new KeyValuePair<string, object?>("result", context.Response.StatusCode.ToString()));
+
     }
 }

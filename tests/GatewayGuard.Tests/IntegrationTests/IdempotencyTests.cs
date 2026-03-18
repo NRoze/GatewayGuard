@@ -20,7 +20,7 @@ public class IdempotencyTests : IClassFixture<TestApiFactory>
     public IdempotencyTests(TestApiFactory factory)
     {
         _client = factory.CreateClient();
-        TestState.ExecutionCount = 0;
+        TestState.Reset();
         randomId = Random.Shared.Next(1, 1000);
         randomKey = $"key-{randomId}";
     }

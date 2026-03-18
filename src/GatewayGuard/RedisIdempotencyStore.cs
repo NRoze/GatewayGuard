@@ -48,7 +48,19 @@ public sealed class RedisIdempotencyStore : IIdempotencyStore
         var value = await _db.StringGetAsync(ResponseKey(key));
 
         if (value.IsNullOrEmpty)
+        {
+            if (_options.EnableMetrics)
+            {
+                GatewayGuardMetrics.CacheMisses.Add(1);
+            }
+
             return null;
+        }
+
+        if (_options.EnableMetrics)
+        {
+            GatewayGuardMetrics.CacheHits.Add(1); 
+        }
 
         return JsonSerializer.Deserialize<IdempotencyRecord>(((byte[])value!).AsSpan());
     }
@@ -85,16 +97,27 @@ public sealed class RedisIdempotencyStore : IIdempotencyStore
     public async Task WaitForCompletionAsync(string key, TimeSpan timeout)
     {
         var sub = _multiplexer.GetSubscriber();
-        var tcs = new TaskCompletionSource();
+        var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var channel = CompletedChannelKey(key);
         var handler = new Action<RedisChannel, RedisValue>((_, _) =>
         {
             tcs.TrySetResult();
         });
 
-        await sub.SubscribeAsync(channel, handler);
-        await Task.WhenAny(tcs.Task, Task.Delay(timeout));
-        await sub.UnsubscribeAsync(channel, handler);
+        await sub.SubscribeAsync(channel, handler).ConfigureAwait(false);
+        try
+        {
+            if (await _db.KeyExistsAsync(ResponseKey(key)).ConfigureAwait(false))
+            {
+                return;
+            }
+
+            await Task.WhenAny(tcs.Task, Task.Delay(timeout)).ConfigureAwait(false);
+        }
+        finally
+        {
+            await sub.UnsubscribeAsync(channel, handler).ConfigureAwait(false);
+        }
     }
     /// <summary>
     /// Attempts to acquire an exclusive lock for the given idempotency key using Redis SET NX (set if not exists).
@@ -111,6 +134,12 @@ public sealed class RedisIdempotencyStore : IIdempotencyStore
             ttl,
             When.NotExists
         ).ConfigureAwait(false);
+
+        if (_options.EnableMetrics)
+        {
+            GatewayGuardMetrics.LockAttempts.Add(1);
+            if (acquired) GatewayGuardMetrics.LockAcquired.Add(1);
+        }
 
         return acquired ? lockValue : null;
     }

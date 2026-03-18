@@ -1,4 +1,6 @@
 using GatewayGuard;
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Resources;
 using SampleApi;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -9,6 +11,15 @@ builder.Services.AddLogging();
 
 if (guardEnabled)
 {
+    builder.Services.AddOpenTelemetry()
+    .WithMetrics(metricBuilder =>
+    {
+        metricBuilder
+            .SetResourceBuilder(ResourceBuilder.CreateDefault().AddService("SampleApi"))
+            .AddAspNetCoreInstrumentation()
+            .AddMeter("GatewayGuard") // must match Meter name used in library
+            .AddPrometheusExporter();
+    });
     builder.Services.AddGatewayGuard(options =>
     {
         options.IdempotencyHeaderName = "X-Idempotency-Key";
@@ -24,12 +35,19 @@ var app = builder.Build();
 if (guardEnabled)
 {
     app.UseGatewayGuard();
+    app.MapPrometheusScrapingEndpoint();
 }
 
 app.Use(async (ctx, next) =>
 {
-    Interlocked.Increment(ref TestState.ExecutionCount);
+    TestState.Increment();
     await next();
+});
+
+app.MapGet("", async (HttpContext ctx) =>
+{
+    await Task.Delay(Random.Shared.Next(10, 50));
+    await ctx.Response.WriteAsync("Hello World!");
 });
 
 app.MapPost("/orders", async (HttpContext ctx) =>

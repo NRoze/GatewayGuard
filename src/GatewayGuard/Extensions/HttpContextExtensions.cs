@@ -1,8 +1,12 @@
 ﻿using Microsoft.AspNetCore.Http;
 
-namespace GatewayGuard.Extentions;
+namespace GatewayGuard.Extensions;
 
-static public class HttpContextExtentions
+/// <summary>
+/// HttpContext extension helpers used by GatewayGuard to produce consistent error responses.
+/// These helpers centralize status/message handling so middleware and stores can return consistent error payloads.
+/// </summary>
+static public class HttpContextExtensions
 {
     extension(HttpContext context)
     {

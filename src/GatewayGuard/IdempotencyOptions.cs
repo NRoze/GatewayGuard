@@ -51,9 +51,22 @@ public sealed class IdempotencyOptions
     public bool EnableFingerprinting { get; set; } = true;
 
     /// <summary>
+    /// When true, GatewayGuard records runtime metrics through the configured meter.
+    /// Disable to avoid metric recording overhead in latency-sensitive scenarios.
+    /// </summary>
+    public bool EnableMetrics { get; set; } = true;
+
+    /// <summary>
     /// Maximum number of concurrent in-flight requests that will be coordinated by the single-flight manager.
     /// </summary>
     public int MaxConcurrentRequests { get; set; } = 1000;
+
+    /// <summary>
+    /// Maximum response body size (in bytes) that will be captured and cached for idempotency replay.
+    /// Responses larger than this threshold will not be saved to the idempotency store to avoid excessive memory/Redis usage.
+    /// Defaults to 256 KiB.
+    /// </summary>
+    public long MaxCachedBodySizeBytes { get; set; } = 256 * 1024;
 
     /// <summary>
     /// The set of HTTP methods for which idempotency behavior is applied by the middleware.

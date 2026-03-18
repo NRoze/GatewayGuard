@@ -76,12 +76,9 @@ public sealed class SingleFlight
         if (_inFlight.Count <= _maxEntries)
             return;
 
-        foreach (var pair in _inFlight)
+        foreach (var pair in _inFlight.Where(x => x.Value.IsExpired))
         {
-            if (pair.Value.IsExpired)
-            {
-                _inFlight.TryRemove(pair);
-            }
+            _inFlight.TryRemove(pair.Key, out _);
         }
     }
 
