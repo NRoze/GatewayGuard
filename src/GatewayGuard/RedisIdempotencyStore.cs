@@ -1,6 +1,8 @@
-﻿using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http;
 using StackExchange.Redis;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
+using GatewayGuard.Logging;
 
 namespace GatewayGuard;
 
@@ -25,6 +27,7 @@ public sealed class RedisIdempotencyStore : IIdempotencyStore
     private readonly IConnectionMultiplexer _multiplexer;
     private readonly IDatabase _db;
     private readonly IdempotencyOptions _options;
+    private readonly ILogger<RedisIdempotencyStore> _logger;
 
     /// <summary>
     /// Initializes a new instance of <see cref="RedisIdempotencyStore"/>.
@@ -32,11 +35,13 @@ public sealed class RedisIdempotencyStore : IIdempotencyStore
     /// <param name="options">Configuration options used to connect to Redis and control expiration.</param>
     public RedisIdempotencyStore(
         IdempotencyOptions options, 
-        IConnectionMultiplexer connectionMultiplexer)
+        IConnectionMultiplexer connectionMultiplexer,
+        ILogger<RedisIdempotencyStore> logger)
     {
         _options = options;
         _multiplexer = connectionMultiplexer;
         _db = connectionMultiplexer.GetDatabase();
+        _logger = logger;
     }
     /// <summary>
     /// Retrieves a cached response for the given idempotency key from Redis.
@@ -82,6 +87,7 @@ public sealed class RedisIdempotencyStore : IIdempotencyStore
             JsonSerializer.SerializeToUtf8Bytes(record),
             _options.IdempotencyKeyExpiration).ConfigureAwait(false);
 
+        _logger.ResponseSavedDebug(key);
         await PublishCompletedAsync(key).ConfigureAwait(false);
     }
 
@@ -112,7 +118,12 @@ public sealed class RedisIdempotencyStore : IIdempotencyStore
                 return;
             }
 
-            await Task.WhenAny(tcs.Task, Task.Delay(timeout)).ConfigureAwait(false);
+            var waitTask = Task.Delay(timeout);
+            var completedTask = await Task.WhenAny(tcs.Task, waitTask).ConfigureAwait(false);
+            if (completedTask == waitTask)
+            {
+                 _logger.WaitForCompletionTimeoutWarning(key, timeout.TotalMilliseconds);
+            }
         }
         finally
         {
@@ -141,6 +152,11 @@ public sealed class RedisIdempotencyStore : IIdempotencyStore
             if (acquired) GatewayGuardMetrics.LockAcquired.Add(1);
         }
 
+        if (acquired)
+            _logger.LockAcquiredDebug(key);
+        else
+            _logger.LockAcquisitionFailedDebug(key);
+
         return acquired ? lockValue : null;
     }
 
@@ -163,6 +179,7 @@ public sealed class RedisIdempotencyStore : IIdempotencyStore
         var sub = _multiplexer.GetSubscriber();
         var channel = CompletedChannelKey(key);
 
+        _logger.PublishedCompletionDebug(key);
         await sub.PublishAsync(channel, "done").ConfigureAwait(false);
     }
 }

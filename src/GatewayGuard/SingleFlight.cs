@@ -1,4 +1,6 @@
 using System.Collections.Concurrent;
+using Microsoft.Extensions.Logging;
+using GatewayGuard.Logging;
 
 namespace GatewayGuard;
 
@@ -12,16 +14,18 @@ public sealed class SingleFlight
     private readonly TimeSpan _ttl;
     private readonly int _maxEntries;
     private readonly Timer _resetTimer;
+    private readonly ILogger<SingleFlight> _logger;
 
     /// <summary>
     /// Initializes a new instance of <see cref="SingleFlight"/>.
     /// </summary>
     /// <param name="options">Configuration options containing TTL and maximum concurrent request settings.</param>
-    public SingleFlight(IdempotencyOptions options)
+    public SingleFlight(IdempotencyOptions options, ILogger<SingleFlight> logger)
     {
         _ttl = options.SingleFlightExpiration;
         _maxEntries = options.MaxConcurrentRequests;
         _resetTimer = new Timer(_ => CleanupIfNeeded(), null, _ttl, _ttl);
+        _logger = logger;
     }
 
     /// <summary>
@@ -41,10 +45,12 @@ public sealed class SingleFlight
 
         if (_inFlight.TryAdd(key, flight))
         {
+            _logger.ExecutingNewFlightDebug(key);
             await RunAsync(key, flight, action);
         }
         else if (_inFlight.TryGetValue(key, out var existing))
         {
+            _logger.WaitingOnExistingFlightDebug(key);
             flight = existing;
         }
 

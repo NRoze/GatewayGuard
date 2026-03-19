@@ -3,7 +3,7 @@ using BenchmarkDotNet.Running;
 
 namespace GatewayGuard.Benchmarks
 {
-    //[MemoryDiagnoser(true)]
+    [MemoryDiagnoser]
     [ShortRunJob()]
     public class MiddlewareBenchmark
     {

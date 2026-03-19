@@ -1,10 +1,12 @@
-﻿using GatewayGuard.Extensions;
+using GatewayGuard.Extensions;
 using Microsoft.AspNetCore.Http;
 using Polly.CircuitBreaker;
 using Polly.Registry;
 using Polly.Timeout;
 using StackExchange.Redis;
 using System.Diagnostics;
+using Microsoft.Extensions.Logging;
+using GatewayGuard.Logging;
 
 namespace GatewayGuard;
 
@@ -18,6 +20,7 @@ public sealed class IdempotencyMiddleware
     private readonly SingleFlight _singleFlight;
     private readonly IdempotencyOptions _options;
     private readonly ResiliencePipelineProvider<string> _pipelineProvider;
+    private readonly ILogger<IdempotencyMiddleware> _logger;
     /// <summary>
     /// Constructs a new instance of <see cref="IdempotencyMiddleware"/>.
     /// </summary>
@@ -29,13 +32,15 @@ public sealed class IdempotencyMiddleware
         IIdempotencyStore store,
         IdempotencyOptions options,
         SingleFlight singleFlight,
-        ResiliencePipelineProvider<string> pipelineProvider)
+        ResiliencePipelineProvider<string> pipelineProvider,
+        ILogger<IdempotencyMiddleware> logger)
     {
         _next = next;
         _store = store;
         _options = options;
         _singleFlight = singleFlight;
         _pipelineProvider = pipelineProvider;
+        _logger = logger;
     }
     /// <summary>
     /// Processes an incoming HTTP request and enforces idempotency rules:
@@ -60,6 +65,7 @@ public sealed class IdempotencyMiddleware
 
         if (string.IsNullOrWhiteSpace(input.key))
         {
+            _logger.MissingIdempotencyKeyWarning();
             await context.SetResponseErrorMissingIdemKey();
 
             return;
@@ -83,6 +89,8 @@ public sealed class IdempotencyMiddleware
             ex is RedisTimeoutException ||
             ex is TimeoutRejectedException)
         {
+            _logger.IdempotencyStoreUnavailableWarning(ex);
+            
             if (_options.FailClosedOnStoreError)
             {
                 await context.SetResponseErrorUnavailableIdemStore();
@@ -95,6 +103,7 @@ public sealed class IdempotencyMiddleware
 
         if (cachedRecord is not null)
         {
+            _logger.ReplayingCachedResponseDebug(input.key);
             await ReplayCachedResponse(context, cachedRecord);
         }
     }
@@ -116,6 +125,7 @@ public sealed class IdempotencyMiddleware
 
         if (lockValue is null)
         {
+            _logger.WaitingForLockCompletionDebug(input.key);
             await _store.WaitForCompletionAsync(input.key, _options.IdempotencyLockExpiration);
             record = await TryHandleCachedKey(context, input.key, input.fingerprint);
             if (record is null)
@@ -132,6 +142,7 @@ public sealed class IdempotencyMiddleware
 
             if (record is null)
             {
+                _logger.ExecutingRequestDebug(input.key);
                 await ExecuteAndCaptureResponse(context, input.key, input.fingerprint);
             }
         }
@@ -176,6 +187,7 @@ public sealed class IdempotencyMiddleware
 
         if (cached is not null && cached.RequestHash != fingerprint)
         {
+            _logger.ConflictingIdempotencyKeyWarning(key);
             await context.SetResponseErrorConflictIdemKey();
             return null;
         }
