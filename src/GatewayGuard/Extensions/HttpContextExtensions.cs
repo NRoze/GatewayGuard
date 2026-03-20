@@ -10,17 +10,13 @@ static public class HttpContextExtensions
 {
     extension(HttpContext context)
     {
-        /// <summary>
-        /// Sets the HTTP response status code and writes the provided error message.
-        /// </summary>
-        /// <param name="context">The HTTP context.</param>
-        /// <param name="statusCode">The HTTP status code to set.</param>
-        /// <param name="message">The error message to write to the response body.</param>
-        /// <returns>A task that completes when the response has been written.</returns>
-        public async Task SetResponseError(int statusCode, string message)
+        private async Task SetResponseError(int statusCode, string message)
         {
-            context.Response.StatusCode = statusCode;
-            await context.Response.WriteAsync(message).ConfigureAwait(false);
+            if (!context.Response.HasStarted)
+            {
+                context.Response.StatusCode = statusCode;
+                await context.Response.WriteAsync(message).ConfigureAwait(false);
+            }
         }
 
         /// <summary>
@@ -30,9 +26,9 @@ static public class HttpContextExtensions
         /// <returns>A task that completes when the response has been written.</returns>
         public async Task SetResponseErrorMissingIdemKey()
         {
-            context.Response.StatusCode = StatusCodes.Status400BadRequest;
-            await context.Response.WriteAsync(
-                ErrorMessageMissingIdempotencyKey).ConfigureAwait(false);
+            await context.SetResponseError(
+                StatusCodes.Status400BadRequest, 
+                ErrorMessageMissingIdempotencyKey);
         }
 
         /// <summary>
@@ -42,8 +38,8 @@ static public class HttpContextExtensions
         /// <returns>A task that completes when the response has been written.</returns>
         public async Task SetResponseErrorConflictIdemKey()
         {
-            context.Response.StatusCode = StatusCodes.Status409Conflict;
-            await context.Response.WriteAsync(
+            await context.SetResponseError(
+                StatusCodes.Status409Conflict,
                 ErrorMessageConflictIdempotencyKey).ConfigureAwait(false);
         }
 
@@ -54,8 +50,8 @@ static public class HttpContextExtensions
         /// <returns>A task that completes when the response has been written.</returns>
         public async Task SetResponseErrorUnknown()
         {
-            context.Response.StatusCode = StatusCodes.Status500InternalServerError;
-            await context.Response.WriteAsync(
+            await context.SetResponseError(
+                StatusCodes.Status500InternalServerError,
                 ErrorMessageUnknown).ConfigureAwait(false);
         }
 
@@ -66,8 +62,9 @@ static public class HttpContextExtensions
         /// <returns>A task that completes when the response has been written.</returns>
         public async Task SetResponseErrorUnavailableIdemStore()
         {
-            context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
-            await context.Response.WriteAsync(ErrorMessageUnavailableIdempotencyStore);
+            await context.SetResponseError(
+                StatusCodes.Status503ServiceUnavailable,
+                ErrorMessageUnavailableIdempotencyStore);
         }
     }
 

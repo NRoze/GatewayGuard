@@ -1,28 +1,34 @@
 
 using FluentAssertions;
-using SampleApi;
-using System.Net;
-using System.Net.Http.Json;
+using GatewayGuard.Tests.Providers;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.VisualStudio.TestPlatform.Utilities;
+using SampleApi;
 using StackExchange.Redis;
+using System.Net;
+using System.Net.Http.Json;
+using Xunit.Abstractions;
 
 namespace GatewayGuard.Tests.IntegrationTests;
 
 
 public class IdempotencyTests : IClassFixture<TestApiFactory>
 {
+    private readonly ITestOutputHelper _output;
     private readonly HttpClient _client;
     private int randomId;
     private string randomKey;
 
-    public IdempotencyTests(TestApiFactory factory)
+    public IdempotencyTests(TestApiFactory factory, ITestOutputHelper output)
     {
         _client = factory.CreateClient();
         TestState.Reset();
         randomId = Random.Shared.Next(1, 1000);
         randomKey = $"key-{randomId}";
+        _output = output;
     }
 
     [Fact]
@@ -91,7 +97,7 @@ public class IdempotencyTests : IClassFixture<TestApiFactory>
         var responses = await Task.WhenAll(tasks);
 
         responses.Should().OnlyContain(r => r.StatusCode == HttpStatusCode.OK);
-        
+
         TestState.ExecutionCount.Should().Be(1);
     }
 
@@ -170,7 +176,7 @@ public class IdempotencyTests : IClassFixture<TestApiFactory>
         var r2 = await _client.SendAsync(put);
 
         TestState.ExecutionCount.Should().Be(2);
-        r1.StatusCode.Should().Be(HttpStatusCode.OK);   
+        r1.StatusCode.Should().Be(HttpStatusCode.OK);
         r2.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -305,7 +311,7 @@ public class IdempotencyTests : IClassFixture<TestApiFactory>
             {
                 var descriptor = services.SingleOrDefault(d => d.ServiceType == typeof(IConnectionMultiplexer));
                 if (descriptor != null) services.Remove(descriptor);
-                
+
                 services.AddSingleton<IConnectionMultiplexer>(sp =>
                 {
                     // An invalid host to trigger immediate connection failures
@@ -316,15 +322,15 @@ public class IdempotencyTests : IClassFixture<TestApiFactory>
         });
 
         var client = brokenFactory.CreateClient();
-        
+
         var req = new HttpRequestMessage(HttpMethod.Post, "/orders");
         req.Headers.Add("X-Idempotency-Key", "fail-open-test-key");
         req.Content = JsonContent.Create(new { amount = 100 });
-        
+
         // Act
         // This hits the invalid redis, triggers Polly CircuitBreaker, and gracefully degrades
         var res = await client.SendAsync(req);
-        
+
         // Assert
         res.StatusCode.Should().Be(HttpStatusCode.OK);
     }
@@ -342,10 +348,10 @@ public class IdempotencyTests : IClassFixture<TestApiFactory>
                 {
                     options.FailClosedOnStoreError = true;
                 }
-                
+
                 var descriptor = services.SingleOrDefault(d => d.ServiceType == typeof(IConnectionMultiplexer));
                 if (descriptor != null) services.Remove(descriptor);
-                
+
                 services.AddSingleton<IConnectionMultiplexer>(sp =>
                 {
                     var config = ConfigurationOptions.Parse("invalid-host:9999,abortConnect=false,connectTimeout=100");
@@ -355,14 +361,14 @@ public class IdempotencyTests : IClassFixture<TestApiFactory>
         });
 
         var client = brokenFactory.CreateClient();
-        
+
         var req = new HttpRequestMessage(HttpMethod.Post, "/orders");
         req.Headers.Add("X-Idempotency-Key", "fail-closed-test-key");
         req.Content = JsonContent.Create(new { amount = 100 });
-        
+
         // Act
         var res = await client.SendAsync(req);
-        
+
         // Assert
         res.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
         var body = await res.Content.ReadAsStringAsync();
@@ -374,7 +380,7 @@ public class IdempotencyTests : IClassFixture<TestApiFactory>
     {
         // Arrange
         var key = $"latency-test-{Guid.NewGuid()}";
-        
+
         var req1 = new HttpRequestMessage(HttpMethod.Post, "/orders");
         req1.Headers.Add("X-Idempotency-Key", key);
         req1.Content = JsonContent.Create(new { amount = 100 });
@@ -396,7 +402,7 @@ public class IdempotencyTests : IClassFixture<TestApiFactory>
         // Assert
         res1.StatusCode.Should().Be(HttpStatusCode.OK);
         res2.StatusCode.Should().Be(HttpStatusCode.OK);
-        
+
         // The mock processing delay in /orders is 10-50ms.
         // The cached response should completely bypass this.
         // In a real-world scenario, sw2.ElapsedMilliseconds should be < 5ms.
@@ -409,8 +415,8 @@ public class IdempotencyTests : IClassFixture<TestApiFactory>
     {
         var key = $"cancel-test-{Guid.NewGuid()}";
         using var cancelSource = new CancellationTokenSource();
-        
-        var requestCreator = () => 
+
+        var requestCreator = () =>
         {
             var req = new HttpRequestMessage(HttpMethod.Post, "/orders");
             req.Headers.Add("X-Idempotency-Key", key);
@@ -434,5 +440,115 @@ public class IdempotencyTests : IClassFixture<TestApiFactory>
         res3.StatusCode.Should().Be(HttpStatusCode.OK);
 
         TestState.ExecutionCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task DistributedLock_ConcurrentRequestsOnDifferentServers_HandledCorrectly()
+    {
+        // Arrange: Spin up two separate server instances (simulating a horizontal scale out)
+        await using var server1 = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.ConfigureLogging(logging =>
+                {
+                    logging.SetMinimumLevel(LogLevel.Debug);
+                    logging.ClearProviders();
+                    logging.AddProvider(new PrefixLoggerProvider("SERVER 1", _output));
+                });
+            });
+        using var client1 = server1.CreateClient();
+        await using var server2 = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.ConfigureLogging(logging =>
+                {
+                    logging.SetMinimumLevel(LogLevel.Debug);
+                    logging.ClearProviders();
+                    logging.AddProvider(new PrefixLoggerProvider("SERVER 2", _output));
+                });
+            });
+        using var client2 = server2.CreateClient();
+        await using var server3 = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.ConfigureLogging(logging =>
+                {
+                    logging.SetMinimumLevel(LogLevel.Debug);
+                    logging.ClearProviders();
+                    logging.AddProvider(new PrefixLoggerProvider("SERVER 3", _output));
+                });
+            });
+        using var client3 = server3.CreateClient();
+
+        var idempotencyKey = Guid.NewGuid().ToString();
+        var requestBody1 = new StringContent("{\"data\": 123}");
+        requestBody1.Headers.Add("X-Idempotency-Key", idempotencyKey);
+
+        var requestBody2 = new StringContent("{\"data\": 123}");
+        requestBody2.Headers.Add("X-Idempotency-Key", idempotencyKey);
+
+        var requestBody3 = new StringContent("{\"data\": 123456}");
+        requestBody3.Headers.Add("X-Idempotency-Key", idempotencyKey);
+
+        var task1 = client1.PostAsync("/orders", requestBody1);
+        var task2 = client2.PostAsync("/orders", requestBody2);
+        var task3 = client3.PostAsync("/orders", requestBody3);
+        var responses = await Task.WhenAll(task1, task2, task3);
+
+        var comparison = await CompareResponsesContent(responses[0], responses[1]);
+        responses[0].StatusCode.Should().Be(HttpStatusCode.OK);
+        responses[1].StatusCode.Should().Be(HttpStatusCode.OK);
+        responses[2].StatusCode.Should().Be(HttpStatusCode.Conflict);
+        comparison.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task DistributedLock_ConcurrentRequestsOnDifferentServers_Conflict()
+    {
+        // Arrange: Spin up two separate server instances (simulating a horizontal scale out)
+        await using var server1 = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.ConfigureLogging(logging =>
+                {
+                    logging.SetMinimumLevel(LogLevel.Debug);
+                    logging.ClearProviders();
+                    logging.AddProvider(new PrefixLoggerProvider("SERVER 1", _output));
+                });
+            });
+        using var client1 = server1.CreateClient();
+        await using var server2 = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.ConfigureLogging(logging =>
+                {
+                    logging.SetMinimumLevel(LogLevel.Debug);
+                    logging.ClearProviders();
+                    logging.AddProvider(new PrefixLoggerProvider("SERVER 2", _output));
+                });
+            });
+        using var client2 = server2.CreateClient();
+
+        var idempotencyKey = Guid.NewGuid().ToString();
+        var requestBody1 = new StringContent("{\"data\": 123}");
+        requestBody1.Headers.Add("X-Idempotency-Key", idempotencyKey);
+
+        var requestBody2 = new StringContent("{\"data\": 123456}");
+        requestBody2.Headers.Add("X-Idempotency-Key", idempotencyKey);
+
+        var task1 = client1.PostAsync("/orders", requestBody1);
+        var task2 = client2.PostAsync("/orders", requestBody2);
+        var responses = await Task.WhenAll(task1, task2);
+
+        responses.Should().Contain(r => r.StatusCode == HttpStatusCode.OK);
+        responses.Should().Contain(r => r.StatusCode == HttpStatusCode.Conflict);
+    }
+
+    private async Task<bool> CompareResponsesContent(HttpResponseMessage httpResponseMessage1, HttpResponseMessage httpResponseMessage2)
+    {
+        var body1 = await httpResponseMessage1.Content.ReadAsStringAsync();
+        var body2 = await httpResponseMessage2.Content.ReadAsStringAsync();
+
+        return string.Equals(body1, body2);
     }
 }

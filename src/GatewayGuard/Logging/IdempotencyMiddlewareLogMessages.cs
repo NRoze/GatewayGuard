@@ -19,6 +19,6 @@ internal static partial class IdempotencyMiddlewareLogMessages
     [LoggerMessage(EventId = 104, Level = LogLevel.Debug, Message = "Cache miss. Executing request for idempotency key '{Key}'.")]
     public static partial void ExecutingRequestDebug(this ILogger logger, string key);
 
-    [LoggerMessage(EventId = 105, Level = LogLevel.Debug, Message = "Failed to acquire lock for idempotency key '{Key}'. Waiting for completion or timeout.")]
-    public static partial void WaitingForLockCompletionDebug(this ILogger logger, string key);
+    [LoggerMessage(EventId = 105, Level = LogLevel.Debug, Message = "Failed writing to response for idempotency key '{Key}'.")]
+    public static partial void ResponseStreamAlreadyStarted(this ILogger logger, string key);
 }

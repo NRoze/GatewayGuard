@@ -104,7 +104,7 @@ public sealed class IdempotencyMiddleware
         if (cachedRecord is not null)
         {
             _logger.ReplayingCachedResponseDebug(input.key);
-            await ReplayCachedResponse(context, cachedRecord);
+            await ReplayCachedResponse(context, cachedRecord, input.key);
         }
     }
 
@@ -125,7 +125,6 @@ public sealed class IdempotencyMiddleware
 
         if (lockValue is null)
         {
-            _logger.WaitingForLockCompletionDebug(input.key);
             await _store.WaitForCompletionAsync(input.key, _options.IdempotencyLockExpiration);
             record = await TryHandleCachedKey(context, input.key, input.fingerprint);
             if (record is null)
@@ -185,7 +184,7 @@ public sealed class IdempotencyMiddleware
     {
         var cached = await _store.GetResponse(key).ConfigureAwait(false);
 
-        if (cached is not null && cached.RequestHash != fingerprint)
+        if (cached is not null && !string.Equals(cached.RequestHash, fingerprint))
         {
             _logger.ConflictingIdempotencyKeyWarning(key);
             await context.SetResponseErrorConflictIdemKey();
@@ -243,8 +242,14 @@ public sealed class IdempotencyMiddleware
     /// <param name="context">The current HTTP context.</param>
     /// <param name="record">The cached idempotency record containing the response to replay.</param>
     /// <returns>A task that completes when the response has been written.</returns>
-    private static async Task ReplayCachedResponse(HttpContext context, IdempotencyRecord record)
+    private async Task ReplayCachedResponse(HttpContext context, IdempotencyRecord record, string key)
     {
+        if (context.Response.HasStarted)
+        {
+            _logger.ResponseStreamAlreadyStarted(key);
+            return;
+        }
+
         context.Response.StatusCode = record.StatusCode;
         context.Response.Headers.Clear();
         foreach (var h in record.Headers)

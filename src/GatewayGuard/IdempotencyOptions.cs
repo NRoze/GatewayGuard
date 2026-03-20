@@ -23,7 +23,7 @@ public sealed class IdempotencyOptions
     /// <summary>
     /// How long to wait for a lock acquisition before timing out during single-flight coordination.
     /// </summary>
-    public TimeSpan IdempotencyLockExpiration { get; set; } = TimeSpan.FromSeconds(5);
+    public TimeSpan IdempotencyLockExpiration { get; set; } = TimeSpan.FromSeconds(1);
 
     /// <summary>
     /// How long retry requests cached duration should be retained.
