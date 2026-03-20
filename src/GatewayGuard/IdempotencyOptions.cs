@@ -33,7 +33,7 @@ public sealed class IdempotencyOptions
     /// <summary>
     /// How long the circuit breaker should remain open before attempting to resume normal operation.
     /// </summary>
-    public TimeSpan ResiliencePipelineExpiration { get; set; } = TimeSpan.FromSeconds(2);
+    public TimeSpan ResiliencePipelineExpiration { get; set; } = TimeSpan.FromSeconds(1);
 
     /// <summary>
     /// Timeout in milliseconds for Redis connection attempts.
