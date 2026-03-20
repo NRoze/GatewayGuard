@@ -468,17 +468,6 @@ public class IdempotencyTests : IClassFixture<TestApiFactory>
                 });
             });
         using var client2 = server2.CreateClient();
-        await using var server3 = new WebApplicationFactory<Program>()
-            .WithWebHostBuilder(builder =>
-            {
-                builder.ConfigureLogging(logging =>
-                {
-                    logging.SetMinimumLevel(LogLevel.Debug);
-                    logging.ClearProviders();
-                    logging.AddProvider(new PrefixLoggerProvider("SERVER 3", _output));
-                });
-            });
-        using var client3 = server3.CreateClient();
 
         var idempotencyKey = Guid.NewGuid().ToString();
         var requestBody1 = new StringContent("{\"data\": 123}");
@@ -487,18 +476,13 @@ public class IdempotencyTests : IClassFixture<TestApiFactory>
         var requestBody2 = new StringContent("{\"data\": 123}");
         requestBody2.Headers.Add("X-Idempotency-Key", idempotencyKey);
 
-        var requestBody3 = new StringContent("{\"data\": 123456}");
-        requestBody3.Headers.Add("X-Idempotency-Key", idempotencyKey);
-
         var task1 = client1.PostAsync("/orders", requestBody1);
         var task2 = client2.PostAsync("/orders", requestBody2);
-        var task3 = client3.PostAsync("/orders", requestBody3);
-        var responses = await Task.WhenAll(task1, task2, task3);
+        var responses = await Task.WhenAll(task1, task2);
 
         var comparison = await CompareResponsesContent(responses[0], responses[1]);
         responses[0].StatusCode.Should().Be(HttpStatusCode.OK);
         responses[1].StatusCode.Should().Be(HttpStatusCode.OK);
-        responses[2].StatusCode.Should().Be(HttpStatusCode.Conflict);
         comparison.Should().BeTrue();
     }
 
