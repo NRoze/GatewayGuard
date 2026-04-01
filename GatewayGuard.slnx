@@ -10,6 +10,7 @@
   </Folder>
   <Folder Name="/Solution Items/">
     <File Path=".github/workflows/ci.yml" />
+    <File Path=".github/workflows/publish.yml" />
   </Folder>
   <Folder Name="/src/">
     <Project Path="src/GatewayGuard/GatewayGuard.csproj" />
