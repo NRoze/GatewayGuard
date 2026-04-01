@@ -80,8 +80,9 @@ public sealed class IdempotencyMiddleware
                 var pipeline = _pipelineProvider.GetPipeline(_options.ResiliencePolicyName);
 
                 return await pipeline.ExecuteAsync(async innerCt =>
-                    await ExecuteRequestAsync(context, input).ConfigureAwait(false), context.RequestAborted);
-            });
+                    await ExecuteRequestAsync(context, input, innerCt).ConfigureAwait(false), ct);
+            },
+            callerToken: context.RequestAborted);
         }
         catch (Exception ex) when (
             ex is BrokenCircuitException ||
@@ -90,7 +91,7 @@ public sealed class IdempotencyMiddleware
             ex is TimeoutRejectedException)
         {
             _logger.IdempotencyStoreUnavailableWarning(ex);
-            
+
             if (_options.FailClosedOnStoreError)
             {
                 await context.SetResponseErrorUnavailableIdemStore();
@@ -114,19 +115,23 @@ public sealed class IdempotencyMiddleware
     /// <param name="context">The current HTTP context.</param>
     /// <param name="input">A tuple containing the idempotency key and request fingerprint.</param>
     /// <returns>A cached record if found or the response was captured; otherwise <c>null</c>.</returns>
-    private async Task<IdempotencyRecord?> ExecuteRequestAsync(HttpContext context, (string key, string fingerprint) input)
+    private async Task<IdempotencyRecord?> ExecuteRequestAsync(
+        HttpContext context, 
+        (string key, string fingerprint) input,
+        CancellationToken cancellationToken)
     {
         IdempotencyRecord? record = default;
 
         var lockValue = await _store.TryAcquireLockAsync(
                 input.key,
-                _options.IdempotencyKeyExpiration)
+                _options.IdempotencyKeyExpiration,
+                cancellationToken)
             .ConfigureAwait(false);
 
         if (lockValue is null)
         {
-            await _store.WaitForCompletionAsync(input.key, _options.IdempotencyLockExpiration);
-            record = await TryHandleCachedKey(context, input.key, input.fingerprint);
+            await _store.WaitForCompletionAsync(input.key, _options.IdempotencyLockExpiration, cancellationToken);
+            record = await TryHandleCachedKey(context, input.key, input.fingerprint, cancellationToken);
             if (record is null)
             {
                 await context.SetResponseErrorUnknown();
@@ -137,19 +142,19 @@ public sealed class IdempotencyMiddleware
 
         try
         {
-            record = await TryHandleCachedKey(context, input.key, input.fingerprint);
+            record = await TryHandleCachedKey(context, input.key, input.fingerprint, cancellationToken);
 
             if (record is null)
             {
                 _logger.ExecutingRequestDebug(input.key);
-                await ExecuteAndCaptureResponse(context, input.key, input.fingerprint);
+                await ExecuteAndCaptureResponse(context, input.key, input.fingerprint, cancellationToken);
             }
         }
         finally
         {
             if (lockValue is not null)
             {
-                await _store.ReleaseLockAsync(input.key, lockValue).ConfigureAwait(false);
+                await _store.ReleaseLockAsync(input.key, lockValue, cancellationToken).ConfigureAwait(false);
             }
         }
 
@@ -180,9 +185,13 @@ public sealed class IdempotencyMiddleware
     /// <param name="key">The idempotency key.</param>
     /// <param name="fingerprint">The request fingerprint to validate against cached data.</param>
     /// <returns>The cached record if found and fingerprint matches; otherwise <c>null</c>.</returns>
-    private async Task<IdempotencyRecord?> TryHandleCachedKey(HttpContext context, string key, string fingerprint)
+    private async Task<IdempotencyRecord?> TryHandleCachedKey(
+        HttpContext context, 
+        string key, 
+        string fingerprint, 
+        CancellationToken cancellationToken)
     {
-        var cached = await _store.GetResponse(key).ConfigureAwait(false);
+        var cached = await _store.GetResponse(key, cancellationToken).ConfigureAwait(false);
 
         if (cached is not null && !string.Equals(cached.RequestHash, fingerprint))
         {
@@ -201,8 +210,16 @@ public sealed class IdempotencyMiddleware
     /// <param name="key">The idempotency key for storage.</param>
     /// <param name="fingerprint">The request fingerprint for validation.</param>
     /// <returns>A task that completes when the response has been executed and stored.</returns>
-    private async Task ExecuteAndCaptureResponse(HttpContext context, string key, string fingerprint)
+    private async Task ExecuteAndCaptureResponse(
+        HttpContext context, 
+        string key, 
+        string fingerprint, 
+        CancellationToken cancellationToken)
     {
+        var originalToken = context.RequestAborted;
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(originalToken, cancellationToken);
+        context.RequestAborted = linkedCts.Token;
+
         var originalBody = context.Response.Body;
         using var memStream = new MemoryStream();
         context.Response.Body = memStream;
@@ -216,7 +233,7 @@ public sealed class IdempotencyMiddleware
                 memStream.SeekBegin();
 
                 if ((ulong)memStream.Length <= (ulong)_options.MaxCachedBodySizeBytes)
-                    await _store.SaveResponse(key, fingerprint, context.Response).ConfigureAwait(false);
+                    await _store.SaveResponse(key, fingerprint, context.Response, cancellationToken).ConfigureAwait(false);
             }
 
             memStream.SeekBegin();
@@ -224,6 +241,7 @@ public sealed class IdempotencyMiddleware
         }
         finally
         {
+            context.RequestAborted = originalToken;
             context.Response.Body = originalBody;
         }
     }
@@ -263,7 +281,7 @@ public sealed class IdempotencyMiddleware
     private async Task CallNext(HttpContext context)
     {
         if (!_options.EnableMetrics)
-        { 
+        {
             await _next(context).ConfigureAwait(false);
             return;
         }

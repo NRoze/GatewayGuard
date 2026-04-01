@@ -48,7 +48,7 @@ public sealed class RedisIdempotencyStore : IIdempotencyStore
     /// </summary>
     /// <param name="key">The idempotency key to retrieve the cached response for.</param>
     /// <returns>The cached record if found; otherwise <c>null</c>.</returns>
-    public async Task<IdempotencyRecord?> GetResponse(string key)
+    public async Task<IdempotencyRecord?> GetResponse(string key, CancellationToken cancellationToken)
     {
         var value = await _db.StringGetAsync(ResponseKey(key));
 
@@ -76,7 +76,7 @@ public sealed class RedisIdempotencyStore : IIdempotencyStore
     /// <param name="key">The idempotency key to store.</param>
     /// <param name="requestHash">A hash/fingerprint of the request used for collision detection.</param>
     /// <param name="response">The HTTP response to capture.</param>
-    public async Task SaveResponse(string key, string requestHash, HttpResponse response)
+    public async Task SaveResponse(string key, string requestHash, HttpResponse response, CancellationToken cancellationToken)
     {
         if (string.IsNullOrEmpty(key)) return;
 
@@ -100,43 +100,43 @@ public sealed class RedisIdempotencyStore : IIdempotencyStore
     /// <returns>
     /// A task that completes when the notification is received or the timeout expires.
     /// </returns>
-    public async Task WaitForCompletionAsync(string key, TimeSpan timeout)
+    public async Task WaitForCompletionAsync(string key, TimeSpan timeout, CancellationToken cancellationToken)
     {
         var sub = _multiplexer.GetSubscriber();
-        var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var waiter = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var channel = CompletedChannelKey(key);
         var handler = new Action<RedisChannel, RedisValue>((_, _) =>
         {
-            tcs.TrySetResult();
+            waiter.TrySetResult();
         });
 
-        await sub.SubscribeAsync(channel, handler).ConfigureAwait(false);
         try
         {
+            await sub.SubscribeAsync(channel, handler).ConfigureAwait(false);
             if (await _db.KeyExistsAsync(ResponseKey(key)).ConfigureAwait(false))
             {
                 return;
             }
-
-            var waitTask = Task.Delay(timeout);
-            var completedTask = await Task.WhenAny(tcs.Task, waitTask).ConfigureAwait(false);
-            if (completedTask == waitTask)
-            {
-                 _logger.WaitForCompletionTimeoutWarning(key, timeout.TotalMilliseconds);
-            }
+            
+            await waiter.Task.WaitAsync(timeout, cancellationToken).ConfigureAwait(false);
+        }
+        catch (TimeoutException)
+        {
+            _logger.WaitForCompletionTimeoutWarning(key, timeout.TotalMilliseconds);
         }
         finally
         {
             await sub.UnsubscribeAsync(channel, handler).ConfigureAwait(false);
         }
     }
+
     /// <summary>
     /// Attempts to acquire an exclusive lock for the given idempotency key using Redis SET NX (set if not exists).
     /// </summary>
     /// <param name="key">The idempotency key to lock.</param>
     /// <param name="ttl">The time-to-live for the lock.</param>
     /// <returns>A unique lock value if the lock was acquired; otherwise <c>null</c>.</returns>
-    public async Task<string?> TryAcquireLockAsync(string key, TimeSpan ttl)
+    public async Task<string?> TryAcquireLockAsync(string key, TimeSpan ttl, CancellationToken cancellationToken)
     {
         var lockValue = Guid.NewGuid().ToString();
         var acquired = await _db.StringSetAsync(
@@ -167,7 +167,7 @@ public sealed class RedisIdempotencyStore : IIdempotencyStore
     /// <param name="key">The idempotency key whose lock should be released.</param>
     /// <param name="lockValue">The lock token returned from <see cref="TryAcquireLockAsync"/>.</param>
     /// <returns>A task that completes with the result of the Lua script execution.</returns>
-    public Task<RedisResult> ReleaseLockAsync(string key, string lockValue)
+    public Task<RedisResult> ReleaseLockAsync(string key, string lockValue, CancellationToken cancellationToken)
     {
         return _db.ScriptEvaluateAsync(
             UnlockScript,
