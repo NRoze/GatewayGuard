@@ -18,16 +18,42 @@ internal static class RequestFingerprint
     /// <returns>
     /// A hex-encoded SHA256 hash representing the request method, path, query and body.
     /// </returns>
-    public static async Task<string> GenerateAsync(HttpContext context)
+    public static async Task<string> GenerateAsync(HttpContext context, ISet<string>? fingerprintedHeaders)
     {
-        int bytesRead;
-        var request = context.Request;
-        var stream = request.Body;
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+
+        TryAppendHeaders(hash, context.Request, fingerprintedHeaders);
+        AppendRequest(hash, context.Request);
+        await AppendBody(hash, context.Request.Body);
+
+        return hash.ToHexString();
+    }
+
+    private static void TryAppendHeaders(IncrementalHash hash, HttpRequest request, ISet<string>? fingerprintedHeaders)
+    {
+        if (fingerprintedHeaders is not null)
+        {
+            foreach (var headerName in fingerprintedHeaders)
+            {
+                if (request.Headers.TryGetValue(headerName, out var values))
+                {
+                    var headerVal = $"{headerName}:{values}:";
+                    hash.AppendDataUTF8(headerVal);
+                }
+            }
+        }
+    }
+
+    private static void AppendRequest(IncrementalHash hash, HttpRequest request)
+    {
         var requestLine = $"{request.Method}:{request.Path}{request.QueryString}:";
 
-        hash.AppendData(Encoding.UTF8.GetBytes(requestLine));
+        hash.AppendDataUTF8(requestLine);
+    }
 
+    private static async Task AppendBody(IncrementalHash hash, Stream stream)
+    {
+        int bytesRead;
         var buffer = ArrayPool<byte>.Shared.Rent(bufferSize);
 
         try
@@ -39,9 +65,6 @@ internal static class RequestFingerprint
             }
 
             stream.SeekBegin();
-
-            byte[] hashBytes = hash.GetHashAndReset();
-            return Convert.ToHexString(hashBytes);
         }
         finally
         {

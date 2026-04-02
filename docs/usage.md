@@ -39,12 +39,15 @@ builder.Services.AddGatewayGuard(options =>
 {
     options.IdempotencyHeaderName = "X-Idempotency-Key";
     options.EnableFingerprinting = true; // generate fingerprint when header missing
+    
+    // Security: Scope keys to the authenticated user to prevent cross-tenant data leakage
+    options.KeyScopeResolver = ctx => ctx.User.Identity?.Name ?? "";
+    
     options.IdempotencyKeyExpiration = TimeSpan.FromMinutes(5);
     options.IdempotencyLockExpiration = TimeSpan.FromSeconds(5);
     options.MaxConcurrentRequests = 1000;
     options.MaxCachedBodySizeBytes = 256 * 1024; // 256 KiB
     options.RedisConnection = "localhost:6379";
-    // other options can be set here
 });
 
 var app = builder.Build();
@@ -73,6 +76,9 @@ Configure application behaviour through `IdempotencyOptions` (provided to `AddGa
 
 - `IdempotencyHeaderName` (string): header to read the idempotency key from (default `Idempotency-Key`).
 - `EnableFingerprinting` (bool): when true, the middleware computes a fingerprint from method+path+body if the header is missing.
+- `KeyScopeResolver` (Func<HttpContext, string>): A delegate to prefix and scope idempotency keys to a specific user or tenant, preventing cross-tenant data leakage.
+- `FingerprintedHeaders` (ISet<string>): Which HTTP request headers should be included in fingerprint generation (default includes `Authorization`).
+- `IgnoredResponseHeaders` (ISet<string>): Which HTTP response headers should not be cached and replayed (default blocks `Date`, `Set-Cookie`, `Transfer-Encoding`, `Connection`).
 - `EnableMetrics` (bool): enable or disable metric recording inside the library.
 - `IdempotencyKeyExpiration` / `IdempotencyLockExpiration` / `SingleFlightExpiration`: TTLs used for stored responses, locks and in-process coordination.
 - `MaxCachedBodySizeBytes` (long): skip caching responses larger than this threshold to avoid excessive memory & storage usage.

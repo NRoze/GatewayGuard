@@ -37,6 +37,7 @@ builder.Services.AddGatewayGuard(options =>
 {
     options.IdempotencyHeaderName = "X-Idempotency-Key";
     options.EnableFingerprinting = true;
+    options.KeyScopeResolver = ctx => ctx.User.Identity?.Name ?? ""; // Secure multi-tenant keys
     options.RedisConnection = "localhost:6379"; // production: secure and configure appropriately
 });
 

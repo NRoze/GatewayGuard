@@ -178,7 +178,10 @@ public sealed class IdempotencyMiddleware
     private async Task<IdempotencyKeyRecord> TryExtractKeyAndFingerprintAsync(HttpContext context)
     {
         var key = context.Request.Headers[_options.IdempotencyHeaderName].ToString();
-        var fingerprint = await RequestFingerprint.GenerateAsync(context).ConfigureAwait(false);
+        var fingerprint = await RequestFingerprint.GenerateAsync(
+                context, 
+                _options.FingerprintedHeaders)
+            .ConfigureAwait(false);
 
         key = string.IsNullOrWhiteSpace(key) && _options.EnableFingerprinting
             ? fingerprint
@@ -186,7 +189,7 @@ public sealed class IdempotencyMiddleware
 
         var scopedKey = ScopedKey(context, key);
 
-        return IdempotencyKeyRecord.Create(key, fingerprint);
+        return IdempotencyKeyRecord.Create(scopedKey, fingerprint);
     }
 
     /// <summary>

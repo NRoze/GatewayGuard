@@ -535,4 +535,119 @@ public class IdempotencyTests : IClassFixture<TestApiFactory>
 
         return string.Equals(body1, body2);
     }
+
+    [Fact]
+    public async Task KeyScopeResolver_Should_Isolate_Requests_By_Tenant()
+    {
+        using var factory = new TestApiFactory().WithWebHostBuilder(builder =>
+        {
+            builder.ConfigureServices(services =>
+            {
+                var optionsDescriptor = services.SingleOrDefault(d => d.ImplementationInstance is IdempotencyOptions);
+
+                if (optionsDescriptor != null && optionsDescriptor.ImplementationInstance is IdempotencyOptions options)
+                {
+                    options.KeyScopeResolver = ctx => ctx.Request.Headers["X-Tenant-Id"].ToString();
+                }
+            });
+        });
+
+        var client = factory.CreateClient();
+
+        var req1 = new HttpRequestMessage(HttpMethod.Post, "/orders");
+        req1.Headers.Add("X-Idempotency-Key", randomKey);
+        req1.Headers.Add("X-Tenant-Id", "Tenant-A");
+        req1.Content = JsonContent.Create(new { amount = 100 });
+
+        var req2 = new HttpRequestMessage(HttpMethod.Post, "/orders");
+        req2.Headers.Add("X-Idempotency-Key", randomKey);
+        req2.Headers.Add("X-Tenant-Id", "Tenant-B");
+        req2.Content = JsonContent.Create(new { amount = 200 }); // Different payload
+
+        var res1 = await client.SendAsync(req1);
+        var res2 = await client.SendAsync(req2);
+
+        // Without scope, req2 would return 409 Conflict because of different payloads. 
+        // With scope, they are treated as completely different keys.
+        res1.StatusCode.Should().Be(HttpStatusCode.OK);
+        res2.StatusCode.Should().Be(HttpStatusCode.OK);
+        TestState.ExecutionCount.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task IgnoredResponseHeaders_Should_Not_Be_Cached()
+    {
+        using var factory = new TestApiFactory().WithWebHostBuilder(builder =>
+        {
+            builder.ConfigureServices(services =>
+            {
+                var optionsDescriptor = services.SingleOrDefault(d => d.ImplementationInstance is IdempotencyOptions);
+                if (optionsDescriptor != null && optionsDescriptor.ImplementationInstance is IdempotencyOptions options)
+                {
+                    options.IgnoredResponseHeaders = new HashSet<string> { "X-Test-Header" };
+                }
+            });
+        });
+
+        var client = factory.CreateClient();
+
+        var req1 = new HttpRequestMessage(HttpMethod.Post, "/large-response");
+        req1.Headers.Add("X-Idempotency-Key", randomKey);
+
+        var res1 = await client.SendAsync(req1);
+        
+        // Ensure the actual endpoint returns the header on the first execution
+        res1.Headers.Contains("X-Test-Header").Should().BeTrue();
+
+        var req2 = new HttpRequestMessage(HttpMethod.Post, "/large-response");
+        req2.Headers.Add("X-Idempotency-Key", randomKey);
+
+        var res2 = await client.SendAsync(req2);
+
+        // Ensure the CACHED response stripped the ignored header
+        res2.StatusCode.Should().Be(HttpStatusCode.Created);
+        res2.Headers.Contains("X-Test-Header").Should().BeFalse();
+        TestState.ExecutionCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task FingerprintedHeaders_Should_Prevent_Collision_On_Missing_Key()
+    {
+        using var factory = new TestApiFactory().WithWebHostBuilder(builder =>
+        {
+            builder.ConfigureServices(services =>
+            {
+                var optionsDescriptor = services.SingleOrDefault(d => d.ImplementationInstance is IdempotencyOptions);
+                if (optionsDescriptor != null && optionsDescriptor.ImplementationInstance is IdempotencyOptions options)
+                {
+                    options.EnableFingerprinting = true;
+                    // Note: SampleApi by default has EnableFingerprinting true. We just ensure Authorization is tracked.
+                    options.FingerprintedHeaders = new HashSet<string> { "Authorization" };
+                }
+            });
+        });
+
+        var client = factory.CreateClient();
+
+        var content = JsonContent.Create(new { amount = 100 });
+
+        var req1 = new HttpRequestMessage(HttpMethod.Post, "/orders");
+        req1.Headers.Add("Authorization", "Bearer token-A");
+        req1.Content = content;
+
+        // Use the same client setup for req2
+        var req2 = new HttpRequestMessage(HttpMethod.Post, "/orders");
+        req2.Headers.Add("Authorization", "Bearer token-B");
+        req2.Content = content; // Same body, same route, NO Idempotency Key!
+
+        var res1 = await client.SendAsync(req1);
+        var res2 = await client.SendAsync(req2);
+
+        res1.StatusCode.Should().Be(HttpStatusCode.OK);
+        res2.StatusCode.Should().Be(HttpStatusCode.OK);
+        
+        // Without Authorization in FingerprintHeaders, this would be 1 execution.
+        // Because they have different Authorization headers, it should be 2 executions.
+        TestState.ExecutionCount.Should().Be(2);
+    }
 }

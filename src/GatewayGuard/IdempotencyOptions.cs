@@ -121,7 +121,15 @@ public sealed class IdempotencyOptions
 
     /// <summary>
     /// Http response headers that should be excluded when caching responses for idempotency replay.
+    /// Defaults to ignoring "Date", "Transfer-Encoding", "Connection", and "Set-Cookie" headers.
     /// </summary>
-    public ISet<string> IgnoredResponseHeaders { get; set; } = 
-        new HashSet<string>() {"Date", "Transfer-Encoding", "Connection", "Set-Cookie"};
+    public ISet<string>? IgnoredResponseHeaders { get; set; } = 
+        new HashSet<string>(StringComparer.OrdinalIgnoreCase) {"Date", "Transfer-Encoding", "Connection", "Set-Cookie"};
+
+    /// <summary>
+    /// A set of HTTP Request headers that should be included when generating the request fingerprint.
+    /// Defaults to just the "Authorization" header to prevent cross-user hash collisions.
+    /// </summary>
+    public ISet<string>? FingerprintedHeaders { get; set; } = 
+        new HashSet<string>(StringComparer.OrdinalIgnoreCase){"Authorization"};
 }
