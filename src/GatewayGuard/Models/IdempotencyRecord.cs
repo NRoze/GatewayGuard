@@ -34,11 +34,16 @@ public sealed partial class IdempotencyRecord
     /// <param name="requestHash">A hash/fingerprint of the request used for collision detection.</param>
     /// <param name="response">The <see cref="HttpResponse"/> whose status, headers and body will be captured.</param>
     /// <returns>A task that completes with the constructed <see cref="IdempotencyRecord"/>.</returns>
-    static public async Task<IdempotencyRecord> CreateAsync(string requestHash, HttpResponse response)
+    static public async Task<IdempotencyRecord> CreateAsync(
+        string requestHash, 
+        HttpResponse response, 
+        ISet<string>? ignoredHeaders = null)
     {
-        var headers = response.Headers.ToDictionary(
-            h => h.Key,
-            h => h.Value.ToString());
+        var headers = response.Headers
+            .Where(h => ignoredHeaders?.Contains(h.Key) != true)
+            .ToDictionary(
+                h => h.Key,
+                h => h.Value.ToString());
 
         return new IdempotencyRecord
         {

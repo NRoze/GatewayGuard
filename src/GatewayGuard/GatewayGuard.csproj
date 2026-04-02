@@ -5,7 +5,7 @@
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
 		<PackageId>GatewayGuard</PackageId>
-		<Version>1.1.0-rc.4</Version>
+		<Version>1.1.0-rc.5</Version>
 		<Authors>Nadav Rozenbaum</Authors>
 		<Description>Idempotency library for .NET</Description>
 		<PackageTags>idempotency;dotnet</PackageTags>

@@ -118,4 +118,10 @@ public sealed class IdempotencyOptions
     /// Factory method to resolve a key scope from the current HTTP context.
     /// </summary>
     public Func<HttpContext, string>? KeyScopeResolver { get; set; }
+
+    /// <summary>
+    /// Http response headers that should be excluded when caching responses for idempotency replay.
+    /// </summary>
+    public ISet<string> IgnoredResponseHeaders { get; set; } = 
+        new HashSet<string>() {"Date", "Transfer-Encoding", "Connection", "Set-Cookie"};
 }

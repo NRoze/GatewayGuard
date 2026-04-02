@@ -81,7 +81,7 @@ public sealed class RedisIdempotencyStore : IIdempotencyStore
     {
         if (string.IsNullOrEmpty(key)) return;
 
-        var record = await IdempotencyRecord.CreateAsync(requestHash, response);
+        var record = await IdempotencyRecord.CreateAsync(requestHash, response, _options.IgnoredResponseHeaders);
 
         await _db.StringSetAsync(
             ResponseKey(key),

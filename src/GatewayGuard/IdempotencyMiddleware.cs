@@ -122,25 +122,25 @@ public sealed class IdempotencyMiddleware
     /// Executes the idempotency logic for the current request, including lock acquisition, cache lookup, and response capture.
     /// </summary>
     /// <param name="context">The current HTTP context.</param>
-    /// <param name="input">A tuple containing the idempotency key and request fingerprint.</param>
+    /// <param name="keyRecord">A tuple containing the idempotency key and request fingerprint.</param>
     /// <returns>A cached record if found or the response was captured; otherwise <c>null</c>.</returns>
     private async Task<IdempotencyRecord?> ExecuteRequestAsync(
         HttpContext context,
-        IdempotencyKeyRecord input,
+        IdempotencyKeyRecord keyRecord,
         CancellationToken cancellationToken)
     {
         IdempotencyRecord? record = default;
 
         var lockValue = await _store.TryAcquireLockAsync(
-                input.key,
+                keyRecord.key,
                 _options.IdempotencyKeyExpiration,
                 cancellationToken)
             .ConfigureAwait(false);
 
         if (lockValue is null)
         {
-            await _store.WaitForCompletionAsync(input.key, _options.IdempotencyLockExpiration, cancellationToken);
-            record = await TryHandleCachedKey(context, input.key, input.fingerprint, cancellationToken);
+            await _store.WaitForCompletionAsync(keyRecord.key, _options.IdempotencyLockExpiration, cancellationToken);
+            record = await TryHandleCachedKey(context, keyRecord.key, keyRecord.fingerprint, cancellationToken);
             if (record is null)
             {
                 await context.SetResponseErrorUnknown();
@@ -151,19 +151,19 @@ public sealed class IdempotencyMiddleware
 
         try
         {
-            record = await TryHandleCachedKey(context, input.key, input.fingerprint, cancellationToken);
+            record = await TryHandleCachedKey(context, keyRecord.key, keyRecord.fingerprint, cancellationToken);
 
             if (record is null)
             {
-                _logger.ExecutingRequestDebug(input.key);
-                await ExecuteAndCaptureResponse(context, input.key, input.fingerprint, cancellationToken);
+                _logger.ExecutingRequestDebug(keyRecord.key);
+                await ExecuteAndCaptureResponse(context, keyRecord.key, keyRecord.fingerprint, cancellationToken);
             }
         }
         finally
         {
             if (lockValue is not null)
             {
-                await _store.ReleaseLockAsync(input.key, lockValue, cancellationToken).ConfigureAwait(false);
+                await _store.ReleaseLockAsync(keyRecord.key, lockValue, cancellationToken).ConfigureAwait(false);
             }
         }
 
