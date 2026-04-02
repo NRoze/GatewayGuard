@@ -4,19 +4,24 @@ using BenchmarkDotNet.Running;
 namespace GatewayGuard.Benchmarks
 {
     [MemoryDiagnoser]
-    [ShortRunJob()]
+    //[ShortRunJob]
     public class MiddlewareBenchmark
     {
         private HttpClient _client = null!;
         private readonly TestApiFactory _factory;
         private readonly string _idemKey = Guid.NewGuid().ToString();
 
-        [Params("true", "false")]
-        public string GuardEnabled { get; set; } = null!;
+        public record Config(string GuardEnabled, string FingerprintEnabled);
 
-        [Params("true", "false")]
-        public string FingerprintEnabled { get; set; } = null!;
+        [ParamsSource(nameof(GetConfigs))]
+        public Config TestConfig { get; set; } = null!;
 
+        public IEnumerable<Config> GetConfigs()
+        {
+            yield return new Config("true", "true");
+            yield return new Config("true", "false");
+            yield return new Config("false", "false");
+        }
         public MiddlewareBenchmark()
         {
             _factory = new TestApiFactory();
@@ -25,8 +30,8 @@ namespace GatewayGuard.Benchmarks
         [GlobalSetup]
         public void Setup()
         {
-            Environment.SetEnvironmentVariable("GatewayGuard__Enabled", GuardEnabled);
-            Environment.SetEnvironmentVariable("FingerprintEnabled__Enabled", FingerprintEnabled);
+            Environment.SetEnvironmentVariable("GatewayGuard__Enabled", TestConfig.GuardEnabled);
+            Environment.SetEnvironmentVariable("FingerprintEnabled__Enabled", TestConfig.FingerprintEnabled);
 
             _client = _factory.CreateClient();
         }

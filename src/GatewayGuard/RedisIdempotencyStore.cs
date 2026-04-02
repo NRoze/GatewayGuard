@@ -3,6 +3,7 @@ using StackExchange.Redis;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using GatewayGuard.Logging;
+using GatewayGuard.Models;
 
 namespace GatewayGuard;
 

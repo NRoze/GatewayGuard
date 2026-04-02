@@ -7,6 +7,7 @@ using StackExchange.Redis;
 using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 using GatewayGuard.Logging;
+using GatewayGuard.Models;
 
 namespace GatewayGuard;
 
@@ -42,6 +43,14 @@ public sealed class IdempotencyMiddleware
         _pipelineProvider = pipelineProvider;
         _logger = logger;
     }
+
+    private string ScopedKey(HttpContext context, string key)
+    {
+        var scope = _options.KeyScopeResolver != null ? _options.KeyScopeResolver(context) : string.Empty;
+        var finalKey = $"{scope}:{key}";
+
+        return finalKey;
+    }
     /// <summary>
     /// Processes an incoming HTTP request and enforces idempotency rules:
     /// - Extracts or generates the idempotency key/fingerprint
@@ -60,10 +69,10 @@ public sealed class IdempotencyMiddleware
 
         context.Request.EnableBuffering(bufferThreshold: 1024 * 64);
 
-        (string key, string fingerprint) input =
+        IdempotencyKeyRecord keyRecord =
             await TryExtractKeyAndFingerprintAsync(context).ConfigureAwait(false);
 
-        if (string.IsNullOrWhiteSpace(input.key))
+        if (string.IsNullOrWhiteSpace(keyRecord.key))
         {
             _logger.MissingIdempotencyKeyWarning();
             await context.SetResponseErrorMissingIdemKey();
@@ -75,12 +84,12 @@ public sealed class IdempotencyMiddleware
 
         try
         {
-            cachedRecord = await _singleFlight.ExecuteAsync(input.key, async (ct) =>
+            cachedRecord = await _singleFlight.ExecuteAsync(keyRecord.key, async (ct) =>
             {
                 var pipeline = _pipelineProvider.GetPipeline(_options.ResiliencePolicyName);
 
                 return await pipeline.ExecuteAsync(async innerCt =>
-                    await ExecuteRequestAsync(context, input, innerCt).ConfigureAwait(false), ct);
+                    await ExecuteRequestAsync(context, keyRecord, innerCt).ConfigureAwait(false), ct);
             },
             callerToken: context.RequestAborted);
         }
@@ -104,8 +113,8 @@ public sealed class IdempotencyMiddleware
 
         if (cachedRecord is not null)
         {
-            _logger.ReplayingCachedResponseDebug(input.key);
-            await ReplayCachedResponse(context, cachedRecord, input.key);
+            _logger.ReplayingCachedResponseDebug(keyRecord.key);
+            await ReplayCachedResponse(context, cachedRecord, keyRecord.key);
         }
     }
 
@@ -116,8 +125,8 @@ public sealed class IdempotencyMiddleware
     /// <param name="input">A tuple containing the idempotency key and request fingerprint.</param>
     /// <returns>A cached record if found or the response was captured; otherwise <c>null</c>.</returns>
     private async Task<IdempotencyRecord?> ExecuteRequestAsync(
-        HttpContext context, 
-        (string key, string fingerprint) input,
+        HttpContext context,
+        IdempotencyKeyRecord input,
         CancellationToken cancellationToken)
     {
         IdempotencyRecord? record = default;
@@ -165,8 +174,8 @@ public sealed class IdempotencyMiddleware
     /// Extracts or generates the idempotency key and request fingerprint from the current HTTP request.
     /// </summary>
     /// <param name="context">The current HTTP context.</param>
-    /// <returns>A tuple containing the idempotency key and request fingerprint.</returns>
-    private async Task<(string, string)> TryExtractKeyAndFingerprintAsync(HttpContext context)
+    /// <returns>IdempotencyKeyRecord containing the idempotency key and request fingerprint.</returns>
+    private async Task<IdempotencyKeyRecord> TryExtractKeyAndFingerprintAsync(HttpContext context)
     {
         var key = context.Request.Headers[_options.IdempotencyHeaderName].ToString();
         var fingerprint = await RequestFingerprint.GenerateAsync(context).ConfigureAwait(false);
@@ -175,7 +184,9 @@ public sealed class IdempotencyMiddleware
             ? fingerprint
             : key;
 
-        return (key, fingerprint);
+        var scopedKey = ScopedKey(context, key);
+
+        return IdempotencyKeyRecord.Create(key, fingerprint);
     }
 
     /// <summary>
@@ -197,6 +208,7 @@ public sealed class IdempotencyMiddleware
         {
             _logger.ConflictingIdempotencyKeyWarning(key);
             await context.SetResponseErrorConflictIdemKey();
+
             return null;
         }
 

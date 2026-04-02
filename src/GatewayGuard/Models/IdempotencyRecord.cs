@@ -1,12 +1,12 @@
 ﻿using GatewayGuard.Extensions;
 using Microsoft.AspNetCore.Http;
 
-namespace GatewayGuard;
+namespace GatewayGuard.Models;
 
 /// <summary>
 /// Represents a cached record of an idempotent HTTP request and its response.
 /// </summary>
-public sealed class IdempotencyRecord
+public sealed partial class IdempotencyRecord
 {
     /// <summary>
     /// Gets or sets the hash representing the request payload for idempotency validation.

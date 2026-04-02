@@ -1,4 +1,5 @@
 ﻿using System.Threading.Tasks;
+using GatewayGuard.Models;
 using Microsoft.AspNetCore.Http;
 using StackExchange.Redis;
 

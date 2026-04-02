@@ -1,4 +1,5 @@
-﻿using Polly;
+﻿using Microsoft.AspNetCore.Http;
+using Polly;
 using Polly.CircuitBreaker;
 using Polly.Timeout;
 using StackExchange.Redis;
@@ -112,4 +113,9 @@ public sealed class IdempotencyOptions
     /// Used to retrieve the circuit breaker from the resilience pipeline provider.
     /// </summary>
     public string ResiliencePolicyName { get; set; } = "GatewayGuardCircuitBreaker";
+
+    /// <summary>
+    /// Factory method to resolve a key scope from the current HTTP context.
+    /// </summary>
+    public Func<HttpContext, string>? KeyScopeResolver { get; set; }
 }
